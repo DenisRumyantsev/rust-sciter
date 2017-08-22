@@ -21,6 +21,6 @@ before_install:
 before_script:
   - if [ "$TRAVIS_OS_NAME" = "osx" ]; then export DYLD_LIBRARY_PATH="$DYLD_LIBRARY_PATH:$TRAVIS_BUILD_DIR"; fi
   - if [ "$TRAVIS_OS_NAME" = "linux" ]; then export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$TRAVIS_BUILD_DIR"; fi
-  - export $PATH="$PATH:$TRAVIS_BUILD_DIR"
-  - export $LIBRARY_PATH="$LIBRARY_PATH:$TRAVIS_BUILD_DIR"
+  - export PATH="$PATH:$TRAVIS_BUILD_DIR"
+  - export LIBRARY_PATH="$LIBRARY_PATH:$TRAVIS_BUILD_DIR"
   - export RUST_BACKTRACE=1

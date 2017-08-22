@@ -1,0 +1,24 @@
+sudo: false
+language: rust
+cache: cargo
+
+rust:
+  - 1.7.0
+  - stable
+  - nightly
+
+os:
+  - linux
+  - osx
+
+branches:
+  only:
+    - travis
+
+before_install:
+  - curl -so "$TRAVIS_BUILD_DIR/libsciter-gtk-64.so" https://raw.githubusercontent.com/c-smile/sciter-sdk/master/bin.gtk/libsciter-gtk-64.so
+
+before_script:
+  - if [ "$TRAVIS_OS_NAME" = "osx" ]; then export DYLD_LIBRARY_PATH="$DYLD_LIBRARY_PATH:$TRAVIS_BUILD_DIR"; fi
+  - if [ "$TRAVIS_OS_NAME" = "linux" ]; then export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$TRAVIS_BUILD_DIR"; fi
+  - export RUST_BACKTRACE=1

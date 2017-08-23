@@ -25,7 +25,7 @@ addons:
     - libgtk-3-0
     - gcc-6
     - g++-6
-
+    - libstdc++6
 
 
 before_install:
@@ -37,3 +37,5 @@ before_script:
   - export PATH="$PATH:$TRAVIS_BUILD_DIR"
   - export LIBRARY_PATH="$LIBRARY_PATH:$TRAVIS_BUILD_DIR"
   - export RUST_BACKTRACE=1
+  - gcc --version
+  - ls /usr/lib/x86_64-linux-gnu/libstdc++*

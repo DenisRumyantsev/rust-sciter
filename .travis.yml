@@ -15,7 +15,6 @@ branches:
 addons:
   apt:
     packages:
-    - libgtk-3-dev
     - gcc-4.9
     - g++-4.9
 

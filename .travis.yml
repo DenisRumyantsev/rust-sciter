@@ -37,5 +37,6 @@ before_script:
   - export PATH="$PATH:$TRAVIS_BUILD_DIR"
   - export LIBRARY_PATH="$LIBRARY_PATH:$TRAVIS_BUILD_DIR"
   - export RUST_BACKTRACE=1
-  - gcc --version
   - ls /usr/lib/x86_64-linux-gnu/libstdc++*
+  - gcc --version
+  - gcc-6 --version

@@ -2,6 +2,9 @@ sudo: false
 language: rust
 cache: cargo
 
+notifications:
+  email: false
+
 rust:
   - stable
 
@@ -17,6 +20,8 @@ addons:
     packages:
     - libgtk-3-dev
     - libgtk-3-0
+    - gcc-6
+    - g++-6
 
 
 

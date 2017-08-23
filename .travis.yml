@@ -40,3 +40,4 @@ before_script:
   - ls /usr/lib/x86_64-linux-gnu/libstdc++*
   - gcc --version
   - gcc-6 --version
+  - sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-6 90

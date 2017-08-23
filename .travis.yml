@@ -39,5 +39,6 @@ before_script:
   - export RUST_BACKTRACE=1
   - ls /usr/lib/x86_64-linux-gnu/libstdc++*
   - sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-6 90
+  - sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-6 90
   - gcc --version
   - gcc-6 --version

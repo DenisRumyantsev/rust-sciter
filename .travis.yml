@@ -43,3 +43,5 @@ before_script:
   - sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-6 90
   - gcc --version
   - gcc-6 --version
+  - cc --version
+

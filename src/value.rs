@@ -341,8 +341,9 @@ impl Value {
 		let mut val = 0i64;
 		match (_API.ValueInt64Data)(self.as_cptr(), &mut val) {
 			VALUE_RESULT::OK => {
-				let sec: i64 = (val-116444736000000000)/1000000000;
-				let nsec: u32 = ((val-116444736000000000-sec*1000000000)*100) as u32;
+				let et = val-116444736000000000;
+				let sec: i64 = et/10000000;
+				let nsec: u32 = (et%10000000) as u32 *100;
 				Some(NaiveDateTime::from_timestamp(sec, nsec))
 			},
 			_ => None
@@ -746,7 +747,7 @@ impl From<NaiveDateTime> for Value {
 	// There is a double (f64) for large numbers as workaround.
 	fn from(val: NaiveDateTime) -> Self {
 		let mut me = Value::new();
-		(_API.ValueInt64DataSet)(me.as_ptr(), val.timestamp()*1000000000 + 116444736000000000, VALUE_TYPE::T_DATE as UINT, 0);
+		(_API.ValueInt64DataSet)(me.as_ptr(), (val.timestamp()+11644473600)*10000000+((val.timestamp_subsec_nanos()/100) as i64), VALUE_TYPE::T_DATE as UINT, 0);
 		return me;
 	}
 }

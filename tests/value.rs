@@ -7,7 +7,6 @@ extern crate chrono;
 use sciter::value::*;
 use chrono::{NaiveDate, NaiveTime, NaiveDateTime};
 
-
 #[test]
 fn new_works() {
 	let v = Value::new();
@@ -300,10 +299,16 @@ fn into_works() {
 #[test]
 fn from_and_to_date_works() {
 	let d = NaiveDate::from_ymd(2010, 3, 8);
-	let t = NaiveTime::from_hms(15, 58, 13);
+	let t = NaiveTime::from_hms_milli(15, 58, 13, 680);
 	let v = Value::from(NaiveDateTime::new(d, t));
+
+	assert_eq!(NaiveDateTime::new(d, t).timestamp(), 1268063893);
+	assert_eq!(NaiveDateTime::new(d, t).timestamp_subsec_nanos(), 680000000);
+
 	assert!(v.is_date());
 	assert!(!v.is_int());	
+
+	// assert_eq!(v.clone().into_string(), "\"2010-03-08T15:58:13\"");
 
 	let date = v.to_date();
 	assert_eq!(date, Some(NaiveDateTime::new(d, t)));

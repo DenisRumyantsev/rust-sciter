@@ -2,8 +2,10 @@
 
 #[macro_use]
 extern crate sciter;
+extern crate chrono;
 
 use sciter::value::*;
+use chrono::{NaiveDate, NaiveTime, NaiveDateTime};
 
 
 #[test]
@@ -294,6 +296,19 @@ fn into_works() {
 	assert_eq!(Value::from(1).into_string(), "1");
 	assert_eq!(Value::from("hello").into_string(), r#""hello""#);
 }
+
+#[test]
+fn from_and_to_date_works() {
+	let d = NaiveDate::from_ymd(2010, 3, 8);
+	let t = NaiveTime::from_hms(15, 58, 13);
+	let v = Value::from(NaiveDateTime::new(d, t));
+	assert!(v.is_date());
+	assert!(!v.is_int());	
+
+	let date = v.to_date();
+	assert_eq!(date, Some(NaiveDateTime::new(d, t)));
+}
+
 
 #[test]
 fn bytes_works() {

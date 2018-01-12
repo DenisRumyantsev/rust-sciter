@@ -65,6 +65,8 @@ and module-level sections for the guides about:
 
 #[macro_use] mod macros;
 
+extern crate chrono;
+
 mod capi;
 pub use capi::scdom::{HELEMENT};
 pub use capi::scdef::{SCITER_RT_OPTIONS, GFX_LAYER};

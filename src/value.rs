@@ -141,6 +141,7 @@ use ::{_API};
 use capi::sctypes::*;
 use capi::scvalue::{VALUE, VALUE_UNIT_TYPE_STRING};
 pub use capi::scvalue::{VALUE_RESULT, VALUE_STRING_CVT_TYPE, VALUE_TYPE};
+use chrono::prelude::*;
 
 // TODO: map keys/values/items
 
@@ -332,6 +333,18 @@ impl Value {
 		let mut val = 0i32;
 		match (_API.ValueIntData)(self.as_cptr(), &mut val) {
 			VALUE_RESULT::OK => Some(val),
+			_ => None
+		}
+	}
+
+	pub fn to_date(&self) -> Option<NaiveDateTime> {		
+		let mut val = 0i64;
+		match (_API.ValueInt64Data)(self.as_cptr(), &mut val) {
+			VALUE_RESULT::OK => {
+				let sec: i64 = (val-116444736000000000)/1000000000;
+				let nsec: u32 = ((val-116444736000000000-sec*1000000000)*100) as u32;
+				Some(NaiveDateTime::from_timestamp(sec, nsec))
+			},
 			_ => None
 		}
 	}
@@ -727,6 +740,18 @@ impl From<i32> for Value {
 	}
 }
 
+/// Value from integer 64.
+impl From<NaiveDateTime> for Value {
+	// Note that there is no generic 64-bit integers at Sciter, only Date/Currency types.
+	// There is a double (f64) for large numbers as workaround.
+	fn from(val: NaiveDateTime) -> Self {
+		let mut me = Value::new();
+		(_API.ValueInt64DataSet)(me.as_ptr(), val.timestamp()*1000000000 + 116444736000000000, VALUE_TYPE::T_DATE as UINT, 0);
+		return me;
+	}
+}
+
+
 /// Value from float.
 impl From<f64> for Value {
 	fn from(val: f64) -> Self {
@@ -871,6 +896,12 @@ impl FromValue for bool {
 impl FromValue for i32 {
 	fn from_value(v: &Value) -> Option<Self> {
 		v.to_int()
+	}
+}
+
+impl FromValue for NaiveDateTime {
+	fn from_value(v: &Value) -> Option<Self> {
+		v.to_date()
 	}
 }
 

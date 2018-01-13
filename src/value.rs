@@ -741,13 +741,35 @@ impl From<i32> for Value {
 	}
 }
 
-/// Value from integer 64.
+/// Value from NaiveDateTime UTC
 impl From<NaiveDateTime> for Value {
 	// Note that there is no generic 64-bit integers at Sciter, only Date/Currency types.
 	// There is a double (f64) for large numbers as workaround.
 	fn from(val: NaiveDateTime) -> Self {
 		let mut me = Value::new();
 		(_API.ValueInt64DataSet)(me.as_ptr(), (val.timestamp()+11644473600)*10000000+((val.timestamp_subsec_nanos()/100) as i64), VALUE_TYPE::T_DATE as UINT, 0x10);
+		return me;
+	}
+}
+
+/// Value from DateTime<Utc>
+impl From<DateTime<Utc>> for Value {
+	// Note that there is no generic 64-bit integers at Sciter, only Date/Currency types.
+	// There is a double (f64) for large numbers as workaround.
+	fn from(val: DateTime<Utc>) -> Self {
+		let mut me = Value::new();
+		(_API.ValueInt64DataSet)(me.as_ptr(), (val.timestamp()+11644473600)*10000000+((val.timestamp_subsec_nanos()/100) as i64), VALUE_TYPE::T_DATE as UINT, 0x10);
+		return me;
+	}
+}
+
+/// Value from DateTime<Local>
+impl From<DateTime<Local>> for Value {
+	// Note that there is no generic 64-bit integers at Sciter, only Date/Currency types.
+	// There is a double (f64) for large numbers as workaround.
+	fn from(val: DateTime<Local>) -> Self {
+		let mut me = Value::new();
+		(_API.ValueInt64DataSet)(me.as_ptr(), (val.timestamp()+11644473600)*10000000+((val.timestamp_subsec_nanos()/100) as i64), VALUE_TYPE::T_DATE as UINT, 0x0);
 		return me;
 	}
 }

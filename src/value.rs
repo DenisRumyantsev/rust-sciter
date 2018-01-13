@@ -747,7 +747,7 @@ impl From<NaiveDateTime> for Value {
 	// There is a double (f64) for large numbers as workaround.
 	fn from(val: NaiveDateTime) -> Self {
 		let mut me = Value::new();
-		(_API.ValueInt64DataSet)(me.as_ptr(), (val.timestamp()+11644473600)*10000000+((val.timestamp_subsec_nanos()/100) as i64), VALUE_TYPE::T_DATE as UINT, 0);
+		(_API.ValueInt64DataSet)(me.as_ptr(), (val.timestamp()+11644473600)*10000000+((val.timestamp_subsec_nanos()/100) as i64), VALUE_TYPE::T_DATE as UINT, 0x10);
 		return me;
 	}
 }

@@ -8,7 +8,7 @@ proxies of script functions, objects and arrays.
 
 ## Basic usage
 
-You can create an empty (undefined) sciter `Value` with `new()`:
+You can create an empty (undefined) Sciter `Value` with `new()`:
 
 ```
 use sciter::Value;
@@ -135,15 +135,14 @@ assert!(v.get_item("one").is_int());
 .
 */
 
-#![allow(dead_code)]
-
 use ::{_API};
 use capi::sctypes::*;
 use capi::scvalue::{VALUE, VALUE_UNIT_TYPE_STRING};
 pub use capi::scvalue::{VALUE_RESULT, VALUE_STRING_CVT_TYPE, VALUE_TYPE};
 use chrono::prelude::*;
 
-// TODO: map keys/values/items
+
+// TODO: `get`, `get_item` methods should return `Option<Value>`
 
 /// `sciter::value` wrapper.
 ///
@@ -159,89 +158,82 @@ unsafe impl Send for Value {}
 
 impl Value {
 
-	/// Return a new sciter value object ([undefined](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/undefined)).
+	/// Return a new Sciter value object ([`undefined`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/undefined)).
 	pub fn new() -> Value {
 		Value { data: VALUE::default(), tmp: ::std::ptr::null_mut() }
 	}
 
-	/// Make explicit [array](http://sciter.com/docs/content/script/Array.htm) value with given length.
+	/// Make an explicit [array](https://sciter.com/docs/content/script/Array.htm) value with the given length.
 	pub fn array(length: usize) -> Value {
 		let mut me = Value::new();
 		(_API.ValueIntDataSet)(me.as_ptr(), length as i32, VALUE_TYPE::T_ARRAY as UINT, 0);
 		return me;
 	}
 
-	/// Make explicit [map](http://sciter.com/docs/content/script/Object.htm) value.
+	/// Make an explicit [map](https://sciter.com/docs/content/script/Object.htm) value.
 	pub fn map() -> Value {
 		let mut me = Value::new();
 		(_API.ValueIntDataSet)(me.as_ptr(), 0i32, VALUE_TYPE::T_MAP as UINT, 0);
 		return me;
 	}
 
-	/// Make explicit json [null](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/null) value.
+	/// Make an explicit json [null](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/null) value.
 	pub fn null() -> Value {
 		let mut me = Value::new();
 		me.data.t = VALUE_TYPE::T_NULL;
 		return me;
 	}
 
-	/// Make sciter [symbol](http://sciter.com/docs/content/script/language/Syntax.htm#symbol-literals) value.
+	/// Make Sciter [symbol](https://sciter.com/docs/content/script/language/Syntax.htm#symbol-literals) value.
 	pub fn symbol(val: &str) -> Value {
 		let mut me = Value::new();
 		me.assign_str(val, VALUE_UNIT_TYPE_STRING::SYMBOL);
 		return me;
 	}
 
-	/// Make sciter [error](http://sciter.com/docs/content/script/Error.htm) value.
+	/// Make Sciter [error](https://sciter.com/docs/content/script/Error.htm) value.
 	pub fn error(val: &str) -> Value {
 		let mut me = Value::new();
 		me.assign_str(val, VALUE_UNIT_TYPE_STRING::ERROR);
 		return me;
 	}
 
-	/// Make sciter [color](https://sciter.com/docs/content/script/Color.htm) value, in 0xAABBGGRR form.
+	/// Make Sciter [color](https://sciter.com/docs/content/script/Color.htm) value, in `0xAABBGGRR` form.
 	pub fn color(val: u32) -> Value {
 		let mut me = Value::new();
 		(_API.ValueIntDataSet)(me.as_ptr(), val as i32, VALUE_TYPE::T_COLOR as u32, 0);
 		return me;
 	}
 
-	/// Make sciter [duration](https://sciter.com/docs/content/script/language/Types.htm) value, in seconds.
+	/// Make Sciter [duration](https://sciter.com/docs/content/script/language/Types.htm) value, in seconds.
 	pub fn duration(val: f64) -> Value {
 		let mut me = Value::new();
 		(_API.ValueFloatDataSet)(me.as_ptr(), val, VALUE_TYPE::T_DURATION as u32, 0);
 		return me;
 	}
 
-	/// Make sciter [angle](https://sciter.com/docs/content/script/Angle.htm) value, in radians.
+	/// Make Sciter [angle](https://sciter.com/docs/content/script/Angle.htm) value, in radians.
 	pub fn angle(val: f64) -> Value {
 		let mut me = Value::new();
 		(_API.ValueFloatDataSet)(me.as_ptr(), val, VALUE_TYPE::T_ANGLE as u32, 0);
 		return me;
 	}
 
-	/// Parse json string into value.
-	pub fn parse(val: &str) -> Result<Value, u32> {
+	/// Parse a json string into value. Returns the number of chars left unparsed in case of error.
+	pub fn parse(val: &str) -> Result<Value, usize> {
 		return Value::parse_as(val, VALUE_STRING_CVT_TYPE::JSON_LITERAL);
 	}
 
-	/// Parse json string into value. Returns number of chars left unparsed in case of error.
-	pub fn parse_as(val: &str, how: VALUE_STRING_CVT_TYPE) -> Result<Value, u32> {
+	/// Parse a json string into value. Returns the number of chars left unparsed in case of error.
+	pub fn parse_as(val: &str, how: VALUE_STRING_CVT_TYPE) -> Result<Value, usize> {
 		let mut me = Value::new();
 		let (s,n) = s2w!(val);
 		let ok: u32 = (_API.ValueFromString)(me.as_ptr(), s.as_ptr(), n, how);
 		if ok == 0 {
 			Ok(me)
 		} else {
-			Err(ok)
+			Err(ok as usize)
 		}
-	}
-
-	/// Parse json string into value.
-	/// Note that `Value::from_str()` parses a json string to value object and returns a `Result<Value>`
-	/// unlike `Value::from()`, which returns just string object only.
-	pub fn from_str(val: &str) -> Result<Self, VALUE_RESULT> {
-		Value::parse(val).or(Err(VALUE_RESULT::BAD_PARAMETER))
 	}
 
 	#[doc(hidden)]
@@ -259,50 +251,51 @@ impl Value {
 		unsafe { ::std::mem::transmute(self.as_cptr()) }
 	}
 
-	/// Get inner value type.
+	/// Get the inner type of the value.
 	pub fn get_type(&self) -> VALUE_TYPE {
 		return self.data.t;
 	}
 
-	/// Get inner value type and its subtype (e.g. units).
+	/// Get the inner type and its subtype (e.g. units) of the value.
 	pub fn full_type(&self) -> (VALUE_TYPE, UINT) {
 		return (self.data.t, self.data.u);
 	}
 
-	/// Convert T_OBJECT value type to JSON T_MAP or T_ARRAY.
+	/// Convert `T_OBJECT` value type to JSON `T_MAP` or `T_ARRAY` types.
+	///
 	/// Also must be used if you need to pass values between different threads.
 	pub fn isolate(&mut self) {
 		(_API.ValueIsolate)(self.as_ptr());
 	}
 
-	/// Clear the VALUE and deallocates all assosiated structures that are not used anywhere else.
+	/// Clear the value. It deallocates all assosiated structures that are not used anywhere else.
 	pub fn clear(&mut self) -> &mut Value {
 		(_API.ValueClear)(self.as_ptr());
 		self
 	}
 
-	/// Return the number of items in the T_ARRAY, T_MAP, T_FUNCTION and T_OBJECT sciter::value.
+	/// Return the number of items in the `T_ARRAY`, `T_MAP`, `T_FUNCTION` and `T_OBJECT` value types.
 	pub fn len(&self) -> usize {
 		let mut n: INT = 0;
 		(_API.ValueElementsCount)(self.as_cptr(), &mut n);
 		return n as usize;
 	}
 
-	/// Append value to the end of T_ARRAY sciter::value.
+	/// Append another value to the end of `T_ARRAY` value.
 	pub fn push<T: Into<Value>>(&mut self, src: T) {
 		(_API.ValueNthElementValueSet)(self.as_ptr(), self.len() as INT, src.into().as_cptr());
 	}
 
-	/// Insert or set value at given `index` of T_ARRAY, T_MAP, T_FUNCTION and T_OBJECT sciter::value.
+	/// Insert or set value at the given `index` of `T_ARRAY`, `T_MAP`, `T_FUNCTION` and `T_OBJECT` value.
 	pub fn set<T: Into<Value>>(&mut self, index: usize, src: T) {
 		(_API.ValueNthElementValueSet)(self.as_ptr(), index as INT, src.into().as_cptr());
 	}
 
-	/// Retreive value of sub-element at `index`
+	/// Retreive value of sub-element at `index`.
 	///
-	/// * T_ARRAY - nth element of the array;
-	/// * T_MAP - value of nth key/value pair in the map;
-	/// * T_FUNCTION - value of nth argument of the function.
+	/// * `T_ARRAY` - nth element of the array;
+	/// * `T_MAP` - value of the nth key/value pair in the map;
+	/// * `T_FUNCTION` - value of the nth argument of the function.
 	///
 	pub fn get(&self, index: usize) -> Value {
 		let mut v = Value::new();
@@ -310,22 +303,84 @@ impl Value {
 		return v;
 	}
 
-	/// Insert or set value of sub-element by key.
+	/// Insert or set value of the sub-element by `key`.
 	///
-	/// * if it is a map - sets named value in the map;
-	/// * if it is a function - sets named argument of the function;
-	/// * if it is a object - sets value of property of the object;
-	/// * otherwise it converts this to map and adds key/v to it.
+	/// * `T_MAP` - sets named value in the map;
+	/// * `T_OBJECT` - sets value of property of the object;
+	/// * `T_FUNCTION` - sets named argument of the function;
+	/// * otherwise it converts self to the map type and adds the key/value to it.
 	///
 	pub fn set_item<TKey: Into<Value>, TValue: Into<Value>>(&mut self, key: TKey, value: TValue) {
 		(_API.ValueSetValueToKey)(self.as_ptr(), key.into().as_cptr(), value.into().as_cptr());
 	}
 
-	/// Retrieve value of sub-element by key.
+	/// Retrieve the value of a sub-element by key.
 	pub fn get_item<T: Into<Value>>(&self, key: T) -> Value {
 		let mut v = Value::new();
 		(_API.ValueGetValueOfKey)(self.as_cptr(), key.into().as_cptr(), v.as_ptr());
 		return v;
+	}
+
+	/// Retrieve the key of a sub-element by `index`.
+	pub fn key_at(&self, index: usize) -> Value {
+		let mut v = Value::new();
+		(_API.ValueNthElementKey)(self.as_cptr(), index as INT, v.as_ptr());
+		return v;
+	}
+
+	/// An iterator visiting all keys of key/value pairs in the map.
+	///
+	/// * `T_MAP` - keys of key/value pairs in the map;
+	/// * `T_OBJECT` - names of key/value properties in the object;
+	/// * `T_FUNCTION` - names of arguments of the function (if any).
+	///
+	pub fn keys(&self) -> KeyIterator {
+		KeyIterator {
+			base: self,
+			index: 0,
+			count: self.len(),
+		}
+	}
+
+	/// An iterator visiting all values in arbitrary order.
+	///
+	/// * `T_ARRAY` - elements of the array;
+	/// * `T_MAP` - values of key/value pairs in the map;
+	/// * `T_OBJECT` - values of key/value properties in the object;
+	/// * `T_FUNCTION` - values of arguments of the function.
+	///
+	pub fn values(&self) -> SeqIterator {
+		SeqIterator {
+			base: self,
+			index: 0,
+			count: self.len(),
+		}
+	}
+
+	/// An iterator visiting all key-value pairs in arbitrary order.
+	///
+	/// The iterator element type is `(Value, Value)`.
+	/// The `Value` must has a key-value type (map, object, function).
+	pub fn items(&self) -> Vec<(Value, Value)> {
+		type Pair = Vec<(Value, Value)>;
+		let result = Box::new(Vec::with_capacity(self.len()));
+
+		extern "system" fn on_pair(param: LPVOID, pkey: *const VALUE, pval: *const VALUE) -> BOOL {
+			assert!(!param.is_null());
+			unsafe {
+				let mut result = Box::from_raw(param as *mut Pair);
+				let src = (Value::copy_from(pkey), Value::copy_from(pval));
+				result.push(src);
+				Box::into_raw(result);	// prevent free
+			}
+			return true as BOOL;
+		}
+
+		let ptr = Box::into_raw(result);
+		(_API.ValueEnumElements)(self.as_cptr(), on_pair, ptr as LPVOID);
+
+		let result = unsafe { Box::from_raw(ptr) };
+		return *result;
 	}
 
 	/// Value to integer.
@@ -395,7 +450,7 @@ impl Value {
 		}
 	}
 
-	/// Value as string for T_STRING type.
+	/// Value as string for `T_STRING` type.
 	pub fn as_string(&self) -> Option<String> {
 		let mut s = 0 as LPCWSTR;
 		let mut n = 0 as UINT;
@@ -411,7 +466,7 @@ impl Value {
 		return self.as_string().unwrap();
 	}
 
-	/// Value as byte slice for T_BYTES type.
+	/// Value as a byte slice for `T_BYTES` type.
 	pub fn as_bytes(&self) -> Option<&[u8]> {
 		let mut s = 0 as LPCBYTE;
 		let mut n = 0 as UINT;
@@ -421,7 +476,7 @@ impl Value {
 		}
 	}
 
-	/// Value to byte vector for T_BYTES type.
+	/// Value to byte vector for `T_BYTES` type.
 	pub fn to_bytes(&self) -> Option<Vec<u8>> {
 		match self.as_bytes() {
 			Some(r) => Some(r.to_owned()),
@@ -429,12 +484,15 @@ impl Value {
 		}
 	}
 
-	/// Function invocation for T_OBJECT/UT_OBJECT_FUNCTION.
+	/// Function invocation for `T_OBJECT` with `UT_OBJECT_FUNCTION` value type.
 	///
 	/// Calls the tiscript function or method holded at `Value` with context of `this` object
 	/// that will be known as _this_ inside that function (it is optional for global functions).
-	/// `name` here is an url or name of the script - used for error reporting in the script.
-	/// You can use the `make_args!(a,b,c)` macro which help you construct script arguments from Rust types.
+	///
+	/// The `name` here is an url or a name of the script - used for error reporting in script.
+	///
+	/// You can use the [`make_args!(args...)`](../macro.make_args.html) macro which helps you
+	/// to construct script arguments from Rust types.
 	pub fn call(&self, this: Option<Value>, args: &[Value], name: Option<&str>) -> Result<Value, VALUE_RESULT> {
 		let mut rv = Value::new();
 		let argv = Value::pack_args(args);
@@ -470,11 +528,16 @@ impl Value {
 		assert!(argc == 0 || !args.is_null());
 		let args = ::std::slice::from_raw_parts(args, argc);
 		for arg in args {
-			let mut v = Value::new();
-			(_API.ValueCopy)(v.as_ptr(), arg);
-			argv.push(v);
+			argv.push(Value::copy_from(arg));
 		}
 		return argv;
+	}
+
+	#[doc(hidden)]
+	unsafe fn copy_from(ptr: *const VALUE) -> Value {
+		let mut v = Value::new();
+		(_API.ValueCopy)(v.as_ptr(), ptr);
+		return v;
 	}
 
 	fn ensure_tmp_mut(&self) -> &mut Value {
@@ -491,8 +554,6 @@ impl Value {
 		}
 		return unsafe { &mut *self.tmp };
 	}
-
-	// TODO: keys, values, items
 
 	/// Returns `true` is `self` is `undefined` or has zero elements.
 	pub fn is_empty(&self) -> bool {
@@ -650,7 +711,7 @@ impl Drop for Value {
 	}
 }
 
-/// Return default value (_undefined_).
+/// Return default value (`undefined`).
 impl Default for Value {
 	fn default() -> Self {
 		return Value::new();
@@ -815,7 +876,7 @@ impl From<String> for Value {
 impl ::std::str::FromStr for Value {
 	type Err = VALUE_RESULT;
 	fn from_str(val: &str) -> Result<Self, Self::Err> {
-		Value::from_str(val)
+		Value::parse(val).or(Err(VALUE_RESULT::BAD_PARAMETER))
 	}
 }
 
@@ -873,7 +934,9 @@ impl ::std::iter::FromIterator<String> for Value {
 }
 
 /// Value from function.
-impl<F> From<F> for Value where F: Fn(&[Value]) -> Value {
+impl<F> From<F> for Value
+	where F: Fn(&[Value]) -> Value
+{
 	fn from(f: F) -> Value {
 		let mut v = Value::new();
 		let boxed = Box::new(f);
@@ -892,7 +955,8 @@ extern "C" fn _functor_release<F>(tag: LPVOID)
 	drop(boxed);
 }
 
-extern "C" fn _functor_invoke<F>(tag: LPVOID, argc: UINT, argv: *const VALUE, retval: *mut VALUE) where F: Fn(&[Value]) -> Value
+extern "C" fn _functor_invoke<F>(tag: LPVOID, argc: UINT, argv: *const VALUE, retval: *mut VALUE)
+	where F: Fn(&[Value]) -> Value
 {
 	// reconstruct handler from pointer
 	let ptr = tag as *mut F;
@@ -908,6 +972,12 @@ extern "C" fn _functor_invoke<F>(tag: LPVOID, argc: UINT, argv: *const VALUE, re
 pub trait FromValue {
 	/// Converts value to specified type.
 	fn from_value(v: &Value) -> Option<Self> where Self: Sized;
+}
+
+impl FromValue for Value {
+	fn from_value(v: &Value) -> Option<Self> {
+		Some(v.clone())
+	}
 }
 
 impl FromValue for bool {
@@ -947,12 +1017,111 @@ impl FromValue for String {
 }
 
 
+/// An iterator visiting all keys of key/value pairs in the map-like `Value` objects.
+pub struct KeyIterator<'a> {
+	base: &'a Value,
+	index: usize,
+	count: usize,
+}
 
+impl<'a> ::std::iter::Iterator for KeyIterator<'a> {
+	type Item = Value;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.index < self.count {
+			self.index += 1;
+			Some(self.base.key_at(self.index - 1))
+		} else {
+			None
+		}
+	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		let remain = self.count - self.index;
+		(remain, Some(remain))
+	}
+
+	fn count(self) -> usize {
+		self.count
+	}
+}
+
+/// An iterator able to yield keys from both `Value`'s ends.
+impl<'a> ::std::iter::DoubleEndedIterator for KeyIterator<'a> {
+	fn next_back(&mut self) -> Option<Self::Item> {
+		if self.index == self.count || self.count == 0 {
+			None
+		} else {
+			self.count -= 1;
+			Some(self.base.key_at(self.count))
+		}
+	}
+}
+
+
+
+/// An iterator over the sub-elements of a `Value`.
+pub struct SeqIterator<'a> {
+	base: &'a Value,
+	index: usize,
+	count: usize,
+}
+
+impl<'a> ::std::iter::Iterator for SeqIterator<'a> {
+	type Item = Value;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.index < self.count {
+			self.index += 1;
+			Some(self.base.get(self.index - 1))
+		} else {
+			None
+		}
+	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		let remain = self.count - self.index;
+		(remain, Some(remain))
+	}
+
+	fn count(self) -> usize {
+		self.count
+	}
+}
+
+/// An iterator able to yield sub-elements from both `Value`'s ends.
+impl<'a> ::std::iter::DoubleEndedIterator for SeqIterator<'a> {
+	fn next_back(&mut self) -> Option<Self::Item> {
+		if self.index == self.count || self.count == 0 {
+			None
+		} else {
+			self.count -= 1;
+			Some(self.base.get(self.count))
+		}
+	}
+}
+
+/// Conversion into an `Iterator`.
+///
+/// Adds the `for` loop syntax support: `for subitem in &value {]`.
+impl<'a> ::std::iter::IntoIterator for &'a Value {
+	type Item = Value;
+	type IntoIter = SeqIterator<'a>;
+
+	fn into_iter(self) -> Self::IntoIter {
+		self.values()
+	}
+}
+
+
+
+
+#[cfg(test)]
 mod tests {
-	#![allow(unused_imports, unused_variables, unused_mut)]
+	#![allow(unused_imports)]
 
 	use super::{Value, FromValue};
-	use capi::scvalue::*;
+	use capi::scvalue::{VALUE, VALUE_TYPE};
 	use std::mem;
 	use ::{_API};
 

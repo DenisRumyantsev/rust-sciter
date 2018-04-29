@@ -1,35 +1,43 @@
-/*! DOM access methods.
+/*! DOM access methods via the [`dom::Element`](struct.Element.html).
+
 
 ## Introduction.
 
-Let’s assume you already integrated Sciter in your application and so you have Sciter window with loaded content.
+Let’s assume you have already integrated Sciter in your application and so you have Sciter window with loaded content.
 
-From Sciter point of view loaded document is a tree of DOM elements (elements of Document Object Model).
+From Sciter's point of view the loaded document is a tree of DOM elements (elements of Document Object Model).
 Sciter builds this tree while loading/parsing of input HTML.
 As a rule each tag in source HTML gets matching DOM element (there are exceptions, see below).
 
 You can change text, attributes, state flags of DOM elements;
-add new or remove existing DOM elements.
-You also can attach your own DOM event handlers to DOM elements to receive events and notifications.
+add new or remove existing DOM elemdoents.
+You can also attach your own DOM event handlers to DOM elements to receive events and notifications.
 
-Therefore your UI in Sciter is a collection of uniform DOM elements that can be styled by CSS and manipulated by native or script code.
+Therefore your UI in Sciter is a collection of uniform DOM elements
+that can be styled by CSS and manipulated by native or script code.
+
 
 ## Basic operations
 
 To access the DOM tree we need to get reference of its root element
-(root element is an element representing `<html>` tag in HTML source).
+(the root element is the element representing the `<html>` tag in HTML source).
 
-```no-run
-let root = Element::from_window(hwnd);
-assert_eq(root.get_tag(), "html");
+```rust,no_run
+# use sciter::dom::Element;
+# let hwnd = ::std::ptr::null_mut();
+let root = Element::from_window(hwnd).unwrap();
+assert_eq!(root.get_tag(), "html");
 ```
 
-By having root element reference we are able to access any other element in the tree
+*TBD:* Other ways to access DOM tree.
+
+By having a root element reference we are able to access any other element in the tree
 using various access and search functions like `SciterGetNthChild`, `SciterSelectElements`, …
 All of them are wrapped into methods of `dom::Element`.
 Here is how you would get reference to first `<div>` element with class "sidebar" using CSS selectors:
 
-```no-run
+```rust,no_run
+# let root = sciter::dom::Element::from(::std::ptr::null_mut());
 let sidebar = root.find_first("div.sidebar").unwrap();
 ```
 
@@ -37,15 +45,18 @@ The same in script:
 
 ```tiscript
 var sidebar = self.select("div.sidebar"); // or
-var sidebar = self.$(div.sidebar); // using stringizer select variant
+var sidebar = self.$(div.sidebar); // using a stringizer variant of select()
 ```
+
+*TBD:* Other select methods.
 
 ## DOM element operations
 
-You can change *text* or HTML of DOM element:
+You can change the **text** or HTML of a DOM element:
 
-```no-run
-if let Some(el) = root.find_first("#cancel") {
+```rust,no_run
+# let root = sciter::dom::Element::from(::std::ptr::null_mut());
+if let Some(mut el) = root.find_first("#cancel").unwrap() {
 	el.set_text("Abort!");
 	el.set_html(br##"<img src="http://lorempixel.com/32/32/cats/" alt="some cat"/>"##, None);
 }
@@ -59,26 +70,30 @@ el.text = "Hello world"; // text
 el.html = "Hello <b>wrold</b>!"; // inner html
 ```
 
-You can get or set DOM *attributes* of any DOM element:
+You can also get or set DOM **attributes** of any DOM element:
 
-```no-run
+```rust,no_run
+# let mut el = sciter::dom::Element::from(::std::ptr::null_mut());
 let val = el.get_attribute("class").unwrap();
 el.set_attribute("class", "new-class");
 ```
 
-To *remove* existing DOM element (detach it from the DOM) you will do this:
+To **remove** an existing DOM element (to detach it from the DOM) you will do this:
 
-```no-run
+```rust,no_run
+# let mut el = sciter::dom::Element::from(::std::ptr::null_mut());
 el.detach();
 ```
 
-and when code will live scope where the `el` variable is defined the DOM element will be destroyed.
+and when code will leave the scope where the `el` variable is defined, the DOM element will be destroyed.
 
 Creation and population of DOM elements looks like this:
 
-```no-run
-let p = Element::with_text("p", "Hello"); // create <p> element
-el.append(p); // append it to existing element, or insert() ...
+```rust,no_run
+# use sciter::dom::Element;
+# let mut el = sciter::dom::Element::from(::std::ptr::null_mut());
+let p = Element::with_text("p", "Hello").unwrap(); // create <p> element
+el.append(&p); // append it to existing element, or use insert() ...
 ```
 
 And in script:
@@ -88,9 +103,10 @@ var p = new Element("p", "Hello");
 el.append(p);
 ```
 
-To change runtime state flags of DOM element we do something like this:
+To change runtime state flags of a DOM element we do something like this:
 
-```no-run
+```rust,ignore
+# let mut el = sciter::dom::Element::from(::std::ptr::null_mut());
 el.set_state(STATE_VISITED);
 ```
 
@@ -102,24 +118,29 @@ el.state.visited = true;
 
 (after such call the element will match `:visited` CSS selector)
 
+
 ## Getting and setting values of DOM elements.
 
-By default value of DOM element is its text but some DOM elements may have so called behaviors
-attached to them (see below).
-`<input>`’s elements for example are plain DOM elements but each input type has its own behavior assigned to the element.
-The behavior, among other things, is responsible for providing and setting value of the element.
-For example value of `input type=checkbox>` is boolean – _true_ or _false_,
-and value of `<form>` element is a collection (name/value map) of all inputs on the form.
+By default a value of a DOM element is its text but some DOM elements may have
+so called behaviors attached to them (see below).
+`<input>`’s elements, for example, are plain DOM elements but each input type has its own behavior assigned to the element.
+The behavior, among other things, is responsible for providing and setting the value of the element.
+
+For example, value of an `input type=checkbox>` is boolean – _true_ or _false_,
+and value of a `<form>` element is a collection (name/value map) of all named inputs on the form.
 
 In native code values are represented by `sciter::Value` objects.
 `sciter::Value` is a structure that can hold different types of values: numbers, strings, arrays, objects, etc
-(see [documentation](http://sciter.com/docs/content/script/language/Types.htm)).
+(see [documentation](https://sciter.com/docs/content/script/language/Types.htm)).
 
-Here is how to set numeric value of DOM element in native code:
+Here is how to set a numeric value of a DOM element in native code:
 
-```no-run
-if let Some(num) = root.find_first("input[type=number]") {
-	num.set_value( sciter::Value::from(12) );
+```rust,no_run
+# use sciter::Value;
+# let root = sciter::dom::Element::from(::std::ptr::null_mut());
+if let Some(mut num) = root.find_first("input[type=number]").unwrap() {
+	num.set_value( Value::from(12) );  // sciter::Value with T_INT type (i32 in Rust)
+	num.set_value(12);  // equivalent but with implicit conversion
 }
 ```
 
@@ -138,7 +159,7 @@ use ::{_API};
 use capi::sctypes::*;
 use value::Value;
 
-pub use capi::scdom::{SCDOM_RESULT, HELEMENT, SET_ELEMENT_HTML};
+pub use capi::scdom::{SCDOM_RESULT, HELEMENT, SET_ELEMENT_HTML, ELEMENT_AREAS};
 use capi::scbehavior::{CLICK_REASON, BEHAVIOR_EVENTS, BEHAVIOR_EVENT_PARAMS};
 
 pub use dom::event::EventHandler;
@@ -242,13 +263,19 @@ impl Element {
 	}
 
 	/// Create new element as child of `parent`.
-	pub fn create_at(tag: &str, parent: &mut Element) -> Result<Element> {
+	pub fn with_parent(tag: &str, parent: &mut Element) -> Result<Element> {
 		let mut e = Element { he: HELEMENT!() };
 		let (tag,_) = s2u!(tag);
 		let text = 0 as LPCWSTR;
 		(_API.SciterCreateElement)(tag.as_ptr(), text, &mut e.he);
 		let ok = parent.append(&e);
 		ok.map(|_| e)
+	}
+
+	/// Create new element as child of `parent`. Deprecated.
+	#[deprecated(since="0.5.0", note="please use `Element::with_parent()` instead.")]
+	pub fn create_at(tag: &str, parent: &mut Element) -> Result<Element> {
+		Element::with_parent(tag, parent)
 	}
 
 	/// Create new element with specified `text`, it is disconnected initially from the DOM.
@@ -377,19 +404,25 @@ impl Element {
 	}
 
 	/// Set value of the element.
-	pub fn set_value(&mut self, val: Value) -> Result<()> {
-		let ok = (_API.SciterSetValue)(self.he, val.as_cptr());
+	pub fn set_value<T: Into<Value>>(&mut self, val: T) -> Result<()> {
+		let ok = (_API.SciterSetValue)(self.he, val.into().as_cptr());
 		ok_or!((), ok)
 	}
 
-	/// Get HWINDOW of containing window.
+	/// Get `HWINDOW` of containing window.
 	pub fn get_hwnd(&self, for_root: bool) -> HWINDOW {
 		let mut hwnd: HWINDOW = ::std::ptr::null_mut();
 		(_API.SciterGetElementHwnd)(self.he, &mut hwnd as *mut HWINDOW, for_root as BOOL);
 		return hwnd;
 	}
 
-	// TODO: get_location
+	/// Get bounding rectangle of the element. See the [`ELEMENT_AREAS`](enum.ELEMENT_AREAS.html) enum for `kind` flags.
+	pub fn get_location(&self, kind: u32) -> Result<RECT> {
+		let mut rc = RECT::default();
+		let ok = (_API.SciterGetElementLocation)(self.he, &mut rc as *mut _, kind as u32);
+		ok_or!(rc, ok)
+	}
+
 	// TODO: request_data, request_html
 	// TODO: send_request
 
@@ -435,7 +468,7 @@ impl Element {
 	}
 
 
-	/// Evaluate script in element context.
+	/// Evaluate the given script in context of the element.
 	pub fn eval_script(&self, script: &str) -> Result<Value> {
 		let mut rv = Value::new();
 		let (s,n) = s2w!(script);
@@ -445,7 +478,8 @@ impl Element {
 
 	/// Call scripting function defined in the namespace of the element (a.k.a. global function).
 	///
-	/// You can use the `make_args!(a,b,c)` macro which help you construct script arguments from Rust types.
+	/// You can use the [`make_args!(args...)`](../macro.make_args.html) macro which helps you
+	/// to construct script arguments from Rust types.
 	pub fn call_function(&self, name: &str, args: &[Value]) -> Result<Value> {
 		let mut rv = Value::new();
 		let (name,_) = s2u!(name);
@@ -456,7 +490,8 @@ impl Element {
 
 	/// Call scripting method defined for the element.
 	///
-	/// You can use the `make_args!(a,b,c)` macro which help you construct script arguments from Rust types.
+	/// You can use the [`make_args!(args...)`](../macro.make_args.html) macro which helps you
+	/// to construct script arguments from Rust types.
 	pub fn call_method(&self, name: &str, args: &[Value]) -> Result<Value> {
 		let mut rv = Value::new();
 		let (name,_) = s2u!(name);
@@ -534,7 +569,7 @@ impl Element {
 
 	//\name Style Attributes
 
-	/// Get [style attribute](http://sciter.com/docs/content/sciter/Style.htm) of the element by its name.
+	/// Get [style attribute](https://sciter.com/docs/content/sciter/Style.htm) of the element by its name.
 	pub fn get_style_attribute(&self, name: &str) -> String {
 		let mut s = String::new();
 		let (name,_) = s2u!(name);
@@ -542,7 +577,7 @@ impl Element {
 		return s;
 	}
 
-	/// Set [style attribute](http://sciter.com/docs/content/sciter/Style.htm).
+	/// Set [style attribute](https://sciter.com/docs/content/sciter/Style.htm).
 	pub fn set_style_attribute(&mut self, name: &str, value: &str) -> Result<()> {
 		let (name,_) = s2u!(name);
 		let (value,_) = s2w!(value);
@@ -642,12 +677,21 @@ impl Element {
 		None
 	}
 
-	/// Get element child at specified index.
+	/// Get element's child at specified index.
 	pub fn get(&self, index: usize) -> Option<Element> {
 		return self.child(index);
 	}
 
-	/// Get element child at specified index.
+	/// An iterator over the direct children of a DOM element.
+	pub fn children(&self) -> Children {
+		Children {
+			base: self,
+			index: 0,
+			count: self.children_count(),
+		}
+	}
+
+	/// Get element's child at specified index.
 	pub fn child(&self, index: usize) -> Option<Element> {
 		let mut p = HELEMENT!();
 		let ok = (_API.SciterGetNthChild)(self.he, index as UINT, &mut p);
@@ -701,22 +745,21 @@ impl Element {
 
 	/// Append element as last child of this element.
 	pub fn append(&mut self, child: &Element) -> Result<()> {
-		self.insert(0x7FFFFFFF, child)
+		self.insert(0x7FFF_FFFF, child)
 	}
 
 	/// Append element as last child of this element.
-	#[allow(unused_must_use)]
+	#[cfg_attr(feature = "cargo-clippy", allow(needless_pass_by_value))]
 	pub fn push(&mut self, element: Element) {
-		self.append(&element);
+		self.append(&element).expect("Could not append element.");
 	}
 
 	/// Remove the last child from this element and returns it, or `None` if this element is empty.
-	#[allow(unused_must_use)]
 	pub fn pop(&mut self) -> Option<Element> {
 		let count = self.len();
 		if count > 0 {
 			if let Some(mut child) = self.get(count - 1) {
-				child.detach();
+				child.detach().expect("Could not detach element.");
 				return Some(child);
 			}
 		}
@@ -757,8 +800,7 @@ impl Element {
 	fn select_elements<T: ElementVisitor>(&self, selector: &str, callback: T) -> Result<Vec<Element>> {
 		use ::capi::schandler::NativeHandler;
 		extern "system" fn inner<T: ElementVisitor>(he: HELEMENT, param: LPVOID) -> BOOL {
-			let handler = NativeHandler::from_mut_ptr(param);
-			let obj = handler.as_mut::<T>();
+			let obj = NativeHandler::get_data::<T>(&param);
 			let e = Element::from(he);
 			let stop = obj.on_element(e);
 			return stop as BOOL;
@@ -827,19 +869,19 @@ impl Element {
 	}
 
 	/// Attach the native event handler to this element.
-	pub fn attach_handler<T: ::dom::EventHandler>(&mut self, handler: T) -> Result<u64> {
+	pub fn attach_handler<Handler: EventHandler>(&mut self, handler: Handler) -> Result<u64> {
 		// make native handler
 		let boxed = Box::new(handler);
 		let ptr = Box::into_raw(boxed);
 		let token = ptr as usize as u64;
-		let ok = (_API.SciterAttachEventHandler)(self.he, ::eventhandler::_event_handler_proc::<T>, ptr as LPVOID);
+		let ok = (_API.SciterAttachEventHandler)(self.he, ::eventhandler::_event_handler_proc::<Handler>, ptr as LPVOID);
 		ok_or!(token, ok)
 	}
 
 	/// Detach your handler from the element. Handlers identified by `token` from `attach_handler()` result.
-	pub fn detach_handler<T: ::dom::EventHandler>(&mut self, token: u64) -> Result<()> {
-		let ptr = token as usize as *mut T;
-		let ok = (_API.SciterDetachEventHandler)(self.he, ::eventhandler::_event_handler_proc::<T>, ptr as LPVOID);
+	pub fn detach_handler<Handler: EventHandler>(&mut self, token: u64) -> Result<()> {
+		let ptr = token as usize as *mut Handler;
+		let ok = (_API.SciterDetachEventHandler)(self.he, ::eventhandler::_event_handler_proc::<Handler>, ptr as LPVOID);
 		ok_or!((), ok)
 	}
 }
@@ -894,6 +936,58 @@ impl ::std::fmt::Debug for Element {
 	}
 }
 
+
+/// An iterator over the direct children of a DOM element.
+pub struct Children<'a> {
+	base: &'a Element,
+	index: usize,
+	count: usize,
+}
+
+/// Allows `for child in el.children() {}` enumeration.
+impl<'a> ::std::iter::Iterator for Children<'a> {
+	type Item = Element;
+
+	fn next(&mut self) -> Option<Element> {
+		if self.index < self.count {
+			let pos = self.index;
+			self.index += 1;
+			self.base.child(pos)
+		} else {
+			None
+		}
+	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		let remain = self.count - self.index;
+		(remain, Some(remain))
+	}
+
+	fn count(self) -> usize {
+		self.count
+	}
+}
+
+impl<'a> ::std::iter::DoubleEndedIterator for Children<'a> {
+	fn next_back(&mut self) -> Option<Element> {
+		if self.index == self.count || self.count == 0 {
+			None
+		} else {
+			self.count -= 1;
+			self.base.child(self.count)
+		}
+	}
+}
+
+/// Allows `for child in &el {}` enumeration.
+impl<'a> ::std::iter::IntoIterator for &'a Element {
+	type Item = Element;
+	type IntoIter = Children<'a>;
+
+	fn into_iter(self) -> Children<'a> {
+		self.children()
+	}
+}
 
 
 use ::utf;
@@ -992,7 +1086,7 @@ Your application handles UI events and acts accordingly executing its functions.
 To be able to handle events in native code you will need to attach instance of `sciter::EventHandler`
 to existing DOM element or to the window itself. In the `EventHandler` you will receive all events
 dispatched to the element and its children as before children (in `PHASE_MASK::SINKING` phase)
-as after them (`PHASE_MASK::BUBBLING` event phase), see [Events Propagation](http://sciter.com/developers/for-native-gui-programmers/#events-propagation).
+as after them (`PHASE_MASK::BUBBLING` event phase), see [Events Propagation](https://sciter.com/developers/for-native-gui-programmers/#events-propagation).
 
 `EventHandler` attached to the window will receive all DOM events no matter which element they are targeted to.
 
@@ -1014,7 +1108,7 @@ You also can assign events handlers defined in script code:
 el.onMouse = function(evt) { ... }
 ```
 
-* "Manually", by assigning behavior class to the [Element](http://sciter.com/docs/content/sciter/Element.htm):
+* "Manually", by assigning behavior class to the [Element](https://sciter.com/docs/content/sciter/Element.htm):
 
 ```tiscript
 class MyEventsHandler: Element { ... }  // your behavior class which inherits sciter's Element class
@@ -1029,7 +1123,7 @@ selector { prototype: MyEventsHandler; }
 
 In this case `MyEventsHandler` class should be defined in one of script files loaded by your HTML.
 
-See the **Behavior attributes** section of [Sciter CSS property map](http://sciter.com/docs/content/css/cssmap.html)
+See the **Behavior attributes** section of [Sciter CSS property map](https://sciter.com/docs/content/css/cssmap.html)
 and [this blog article](http://www.terrainformatica.com/2014/07/sciter-declarative-behavior-assignment-by-css-prototype-and-aspect-properties/) which covers
 Behaviors, Prototypes and Aspects of Sciter CSS behavior assignment.
 
@@ -1050,24 +1144,33 @@ You can use one of these methods to call scripts from code of your application:
 
 * To evaluate arbitrary script in context of current document loaded into the window:
 
-```no-run
-let root = Element::from_window(hwnd);
-let result: Value = root.eval_script("... script ...");
+```rust,no_run
+# use sciter::dom::Element;
+# use sciter::Value;
+# let hwnd = ::std::ptr::null_mut();
+let root = Element::from_window(hwnd).unwrap();
+let result: Value = root.eval_script("... script ...").unwrap();
 ```
 
 * To call global function defined in script using its full name (may include name of namespaces where it resides):
 
-```no-run
-let root = Element::from_window(hwnd);
-let result: Value = root.call_function("namespace.name", &make_args!(p0, p1, ...));
+```ignore
+# #[macro_use] extern crate sciter;
+# use sciter::Value;
+# let root = sciter::dom::Element::from(::std::ptr::null_mut());
+let result: Value = root.call_function("namespace.name", &make_args!(1, "2", 3.0)).unwrap();
 ```
 parameters – `&[Value]` slice.
 
 * To call method (function) defined in script for particular DOM element:
 
-```no-run
-dom::element el = root.find_first(...);
-let result: Value = el.call_method("method_name", &make_args!());
+```ignore
+# #[macro_use] extern crate sciter;
+# use sciter::Value;
+# let root = sciter::dom::Element::from(::std::ptr::null_mut());
+if let Some(el) = root.find_first("input").unwrap() {
+	let result: Value = el.call_method("canUndo", &make_args!()).unwrap();
+}
 ```
 
 
@@ -1101,13 +1204,14 @@ This way you can establish interaction between scipt and native code inside your
 	}
 
 	/// UI action causing change.
+	#[derive(Debug)]
 	pub enum EventReason {
 		/// General event source triggers (by mouse, key or synthesized).
-	  General(CLICK_REASON),
-	  /// Edit control change trigger.
-	  EditChanged(EDIT_CHANGED_REASON),
-	  /// `<video>` request for frame source binding (*unsupported yet*).
-	  VideoBind(LPVOID),
+		General(CLICK_REASON),
+		/// Edit control change trigger.
+		EditChanged(EDIT_CHANGED_REASON),
+		/// `<video>` request for frame source binding (*unsupported yet*).
+		VideoBind(LPVOID),
 	}
 
 
@@ -1126,7 +1230,8 @@ This way you can establish interaction between scipt and native code inside your
 
 		/// Return list of event groups this event_handler is subscribed to.
 		///
-		/// Default is ``.
+		/// Default is `HANDLE_BEHAVIOR_EVENT | HANDLE_SCRIPTING_METHOD_CALL`.
+		/// See also [`default_events()`](fn.default_events.html).
 		fn get_subscription(&mut self) -> Option<EVENT_GROUPS> {
 			return Some(default_events());
 		}

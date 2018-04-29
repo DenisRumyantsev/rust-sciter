@@ -38,7 +38,7 @@ impl sciter::EventHandler for Handler {
 		}
 
 		match code {
-			sciter::dom::event::BEHAVIOR_EVENTS::BUTTON_CLICK => {
+			BEHAVIOR_EVENTS::BUTTON_CLICK => {
 
 				let source = Element::from(source);
 				let mut target = Element::from(target);
@@ -110,6 +110,15 @@ impl sciter::EventHandler for Handler {
 		assert_eq!(body.first_sibling().expect("must be head"), head);
 		assert_eq!(body.last_sibling().expect("must be body"), body);
 
+		println!("for loop in children");
+		for e in root.children() {
+			println!("child {:?}", e);
+		}
+
+		println!("for loop in ref");
+		for e in &root {
+			println!("child {:?}", e);
+		}
 
 		if let Ok(Some(h1)) = body.find_first("body > h1") {
 			println!("h1 {:?}", h1);
@@ -148,7 +157,7 @@ impl sciter::EventHandler for Handler {
 			// DOM manipulation.
 			// After creating the new Element, we can set only attributes for it until we'll attach it to the DOM.
 			//
-			let mut div = Element::create_at("div", &mut body).unwrap();
+			let mut div = Element::with_parent("div", &mut body).unwrap();
 			div.set_style_attribute("outline", "1px solid orange");
 			div.set_style_attribute("width", "max-content");
 			div.set_style_attribute("padding", "5dip");
@@ -195,17 +204,12 @@ impl sciter::EventHandler for Handler {
 	}
 }
 
-
-fn testing_dom() {
-	use sciter::window;
-	let mut frame = window::Window::with_size((750,750), window::Flags::main_window(true));
-	let handler = Handler::default();
-	frame.event_handler(handler);
+fn main() {
+  let mut frame = sciter::WindowBuilder::main_window()
+  	.with_size((750, 950))
+  	.create();
+	frame.event_handler(Handler::default());
 	frame.set_title("DOM sample");
 	frame.load_file("http://httpbin.org/html");
 	frame.run_app();
-}
-
-fn main() {
-	testing_dom();
 }

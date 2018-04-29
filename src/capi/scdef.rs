@@ -18,7 +18,6 @@ pub enum IDXGISurface {}
 
 #[repr(C)]
 #[derive(Debug, PartialOrd, PartialEq)]
-
 /// `HostHandler::on_data_load()` result code.
 ///
 /// This notification gives application a chance to override built-in loader and
@@ -36,38 +35,43 @@ pub enum LOAD_RESULT {
   LOAD_MYSELF,
 }
 
+/// Script runtime options.
 #[repr(C)]
 #[derive(Debug)]
 #[allow(missing_docs)]
-/// Script runtime options.
 pub enum SCRIPT_RUNTIME_FEATURES
 {
-  ALLOW_FILE_IO = 0x00000001,
-  ALLOW_SOCKET_IO = 0x00000002,
-  ALLOW_EVAL = 0x00000004,
-  ALLOW_SYSINFO = 0x00000008
+	ALLOW_FILE_IO = 0x1,
+	ALLOW_SOCKET_IO = 0x2,
+	ALLOW_EVAL = 0x4,
+	ALLOW_SYSINFO = 0x8,
 }
 
+/// Explicitly set a sciter graphics layer.
 #[repr(C)]
 #[derive(Debug)]
 #[allow(missing_docs)]
-/// Explicitly set sciter graphics layer.
 pub enum GFX_LAYER
 {
+	/// An auto-selected backend.
+	AUTO = 0xFFFF,
+
+	/// Depends on OS: GDI, Cairo or CoreGraphics.
+	CPU = 1,
+
+	/// A software rasterizer for Direct2D.
 	#[cfg(windows)]
-  GFX_LAYER_GDI      = 1,
+	WARP = 2,
 
-  #[cfg(osx)]
-  GFX_LAYER_CG       = 1,
+	/// A hardware Direct2D mode.
+	#[cfg(windows)]
+	D2D = 3,
 
-  #[cfg(unix)]
-  GFX_LAYER_CAIRO    = 1,
+	/// Skia backend with CPU rasterization mode.
+	SKIA_CPU = 4,
 
-  GFX_LAYER_WARP     = 2,
-  GFX_LAYER_D2D      = 3,
-  GFX_LAYER_SKIA_CPU = 4,
-  GFX_LAYER_SKIA_OPENGL = 5,
-  GFX_LAYER_AUTO     = 0xFFFF,
+	/// Skia backend with OpenGL rendering.
+	SKIA_OPENGL = 5,
 }
 
 #[repr(C)]
@@ -103,8 +107,8 @@ pub enum SCITER_RT_OPTIONS
   SCITER_ALPHA_WINDOW  = 12,
 }
 
-#[repr(C)]
 /// Window flags
+#[repr(C)]
 pub enum SCITER_CREATE_WINDOW_FLAGS {
 	/// child window only, if this flag is set all other flags ignored
   SW_CHILD      = (1 << 0),
@@ -130,46 +134,9 @@ pub enum SCITER_CREATE_WINDOW_FLAGS {
   SW_OWNS_VM      = (1 << 10),
 }
 
-impl SCITER_CREATE_WINDOW_FLAGS {
-	/// Main application window.
-	pub fn main_window(resizeable: bool) -> SCITER_CREATE_WINDOW_FLAGS {
-		let flags = SCITER_CREATE_WINDOW_FLAGS::SW_MAIN
-							 | SCITER_CREATE_WINDOW_FLAGS::SW_CONTROLS
-							 | SCITER_CREATE_WINDOW_FLAGS::SW_TITLEBAR;
-		if resizeable {
-			flags | SCITER_CREATE_WINDOW_FLAGS::SW_RESIZEABLE
-		} else {
-			flags
-		}
-	}
-
-	/// Child window.
-	pub fn child_window() -> SCITER_CREATE_WINDOW_FLAGS {
+impl Default for SCITER_CREATE_WINDOW_FLAGS {
+	fn default() -> Self {
 		SCITER_CREATE_WINDOW_FLAGS::SW_CHILD
-	}
-
-	/// Popup window.
-	pub fn popup_window(title: bool, minmaxclose: bool, resizeable: bool) -> SCITER_CREATE_WINDOW_FLAGS {
-		let mut flags = SCITER_CREATE_WINDOW_FLAGS::SW_POPUP;
-		if title {
-			flags = flags | SCITER_CREATE_WINDOW_FLAGS::SW_TITLEBAR;
-		}
-		if minmaxclose {
-			flags = flags | SCITER_CREATE_WINDOW_FLAGS::SW_CONTROLS;
-		}
-		if resizeable {
-			flags = flags | SCITER_CREATE_WINDOW_FLAGS::SW_RESIZEABLE;
-		}
-		return flags;
-	}
-
-	/// Tool window.
-	pub fn tool_window(resizeable: bool) -> SCITER_CREATE_WINDOW_FLAGS {
-		let mut flags = SCITER_CREATE_WINDOW_FLAGS::SW_TOOL;
-		if resizeable {
-			flags = flags | SCITER_CREATE_WINDOW_FLAGS::SW_RESIZEABLE;
-		}
-		return flags;
 	}
 }
 
@@ -226,6 +193,7 @@ pub struct SCN_LOAD_DATA
   pub outData: LPCBYTE,
   /// [in,out] loaded data size to return.
   pub outDataSize: UINT,
+
   /// [in] resource type category
   pub dataType: SCITER_RESOURCE_TYPE,
 
@@ -264,9 +232,8 @@ pub struct SCN_DATA_LOADED
 }
 
 #[repr(C)]
-#[derive(Debug)]
 /// This notification is sent on parsing the document and while processing elements
-/// having non empty `style.behavior` attribute value.
+/// having non empty `behavior: ` style attribute value.
 pub struct SCN_ATTACH_BEHAVIOR
 {
 	/// `SC_ATTACH_BEHAVIOR` here.
@@ -279,7 +246,7 @@ pub struct SCN_ATTACH_BEHAVIOR
   /// [in] zero terminated string, string appears as value of CSS `behavior: ` attribute.
   pub name: LPCSTR,
   /// [out] pointer to ElementEventProc function.
-  pub elementProc: *mut ElementEventProc,
+  pub elementProc: ElementEventProc,
   /// [out] tag value, passed as is into pointer ElementEventProc function.
   pub elementTag: LPVOID,
 }

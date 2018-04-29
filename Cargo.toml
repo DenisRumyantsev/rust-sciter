@@ -1,6 +1,6 @@
 [package]
 name = "sciter-rs"
-version = "0.4.25"
+version = "0.5.40"
 description = "Rust bindings for Sciter - Embeddable HTML/CSS/script engine (cross-platform desktop GUI toolkit). Also capable with DirectX / OpenGL."
 keywords = ["gui", "gtk", "cocoa", "opengl", "skia"]
 categories = ["gui", "web-programming", "rendering::graphics-api", "api-bindings"]
@@ -11,23 +11,36 @@ documentation = "https://docs.rs/sciter-rs"
 readme = "README.md"
 license = "MIT"
 
-exclude = [".gitignore", "appveyor.yml"]
+exclude = [".gitignore", ".editorconfig", ".appveyor.yml", "clippy.toml"]
 
 [badges]
 appveyor = { repository = "sciter-sdk/rust-sciter" }
+travis-ci = { repository = "sciter-sdk/rust-sciter" }
+
+maintenance = { status = "passively-maintained" }
+
+[workspace]
+members = [".", "serde"]
+
 
 [lib]
 name = "sciter"
+path = "src/lib.rs"
 crate-type = ["rlib"]
+
+[features]
+default = []
+nightly = []
 
 [dependencies]
 libc = "0.2"
-lazy_static = "0.2"
+lazy_static = "1.0"
 chrono = "0.4"
 
 [target.x86_64-apple-darwin.dependencies]
 objc = "0.2"
 objc-foundation = "0.1"
+
 
 [[example]]
 name = "first"
@@ -52,3 +65,15 @@ path = "examples/fire_event.rs"
 [[example]]
 name = "interop"
 path = "examples/interop.rs"
+
+[[example]]
+name = "threads"
+path = "examples/threads.rs"
+
+[[example]]
+name = "archived"
+path = "examples/archived.rs"
+
+[[example]]
+name = "video"
+path = "examples/video.rs"

@@ -5,20 +5,20 @@
 /*!
 # Rust bindings library for Sciter engine.
 
-Sciter is an embeddable [multiplatform](http://sciter.com/sciter/crossplatform/) HTML/CSS/script engine
+Sciter is an embeddable [multiplatform](https://sciter.com/sciter/crossplatform/) HTML/CSS/script engine
 with GPU accelerated rendering designed to render modern desktop application UI.
 It's a compact, single dll/dylib/so file (4-8 mb), engine without any additional dependencies.
 
 Check the [screenshot gallery](https://github.com/oskca/sciter#sciter-desktop-ui-examples) of the desktop UI examples.
 
-Sciter supports all standard elements defined in HTML5 specification [with some additions](http://sciter.com/developers/for-web-programmers/).
+Sciter supports all standard elements defined in HTML5 specification [with some additions](https://sciter.com/developers/for-web-programmers/).
 CSS extended to better support Desktop UI development, e.g. flow and flex units, vertical and horizontal alignment, OS theming.
 
-[Sciter SDK](http://sciter.com/download/) comes with demo "browser" with builtin DOM inspector, script debugger and documentation browser:
+[Sciter SDK](https://sciter.com/download/) comes with demo "browser" with builtin DOM inspector, script debugger and documentation browser:
 
-![Sciter tools](http://sciter.com/images/sciter-tools.png)
+![Sciter tools](https://sciter.com/images/sciter-tools.png)
 
-Check <http://sciter.com> website and its [documentation resources](http://sciter.com/developers/) for engine principles, architecture and more.
+Check <https://sciter.com> website and its [documentation resources](https://sciter.com/developers/) for engine principles, architecture and more.
 
 ## Brief look:
 
@@ -36,7 +36,7 @@ fn main() {
 
 It looks similar like this:
 
-![Minimal sciter sample](http://i.imgur.com/ojcM5JJ.png)
+![Minimal sciter sample](https://i.imgur.com/ojcM5JJ.png)
 
 Check [rust-sciter/examples](https://github.com/sciter-sdk/rust-sciter/tree/master/examples) folder for more complex usage
 and module-level sections for the guides about:
@@ -49,17 +49,20 @@ and module-level sections for the guides about:
 .
 */
 
-#![doc(html_logo_url = "http://sciter.com/screenshots/slide-sciter-osx.png",
-       html_favicon_url = "http://sciter.com/wp-content/themes/sciter/!images/favicon.ico")]
+#![doc(html_logo_url = "https://sciter.com/screenshots/slide-sciter-osx.png",
+       html_favicon_url = "https://sciter.com/wp-content/themes/sciter/!images/favicon.ico")]
 
 // documentation test:
 // #![warn(missing_docs)]
+
+/* Clippy lints */
+
+#![cfg_attr(feature = "cargo-clippy", allow(needless_return, let_and_return))]
 
 /* Macros */
 
 #[cfg(target_os="macos")]
 #[macro_use] extern crate objc;
-
 #[macro_use] extern crate lazy_static;
 
 
@@ -75,19 +78,32 @@ pub use capi::scdef::{SCITER_RT_OPTIONS, GFX_LAYER};
 mod platform;
 mod eventhandler;
 
-pub mod window;
-pub mod host;
-pub mod value;
-pub mod utf;
 pub mod dom;
+pub mod host;
 pub mod types;
+pub mod utf;
+pub mod value;
+pub mod video;
+pub mod window;
 
 pub use dom::Element;
 pub use dom::event::EventHandler;
-pub use host::{Host, HostHandler};
+pub use host::{Archive, Host, HostHandler};
 pub use value::{Value, FromValue};
 pub use window::Window;
 
+/// Builder pattern for window creation. See [`window::Builder`](window/struct.Builder.html) documentation.
+///
+/// For example,
+///
+/// ```rust,no_run
+/// let mut frame = sciter::WindowBuilder::main_window()
+///   .with_size((800,600))
+///   .glassy()
+///   .fixed()
+///   .create();
+/// ```
+pub type WindowBuilder = window::Builder;
 
 
 /* Loader */
@@ -130,21 +146,20 @@ mod ext {
 	}
 }
 
-#[cfg(all(target_os="linux", target_arch="x86_64"))]
+#[cfg(target_os="linux")]
 mod ext {
 	// Note:
+	// Since 4.1.4 library name has been changed to "libsciter-gtk" (without 32/64 suffix).
 	// Since 3.3.1.6 library name was changed to "libsciter".
 	// However CC requires `-l sciter` form.
-	use capi::scapi::{ISciterAPI};
-	#[link(name="sciter-gtk-64", kind="dylib")]
-	extern "system" { pub fn SciterAPI() -> *const ISciterAPI;	}
+	#[link(name="sciter-gtk")]
+	extern "system" { pub fn SciterAPI() -> *const ::capi::scapi::ISciterAPI;	}
 }
 
 #[cfg(all(target_os="macos", target_arch="x86_64"))]
 mod ext {
-	use capi::scapi::{ISciterAPI};
 	#[link(name="sciter-osx-64", kind = "dylib")]
-	extern "system" { pub fn SciterAPI() -> *const ISciterAPI;	}
+	extern "system" { pub fn SciterAPI() -> *const ::capi::scapi::ISciterAPI;	}
 }
 
 #[allow(non_snake_case)]
@@ -180,8 +195,54 @@ pub fn version() -> String {
 	return version;
 }
 
+/// Various global sciter engine options.
+pub enum RuntimeOptions<'a> {
+	/// global; value: milliseconds, connection timeout of http client.
+	ConnectionTimeout(u32),
+	/// global; value: 0 - drop connection, 1 - use builtin dialog, 2 - accept connection silently.
+	OnHttpsError(u8),
+	/// global; value = LPCBYTE, json - GPU black list, see: gpu-blacklist.json resource.
+	GpuBlacklist(&'a str),
+	/// global or per-window; value - combination of [SCRIPT_RUNTIME_FEATURES](enum.SCRIPT_RUNTIME_FEATURES.html) flags.
+	ScriptFeatures(u8),
+	/// global (must be called before any window creation); value - [GFX_LAYER](enum.GFX_LAYER.html).
+	GfxLayer(GFX_LAYER),
+	/// global or per-window; value - TRUE/FALSE
+	DebugMode(bool),
+	/// global; value - BOOL, TRUE - the engine will use "unisex" theme that is common for all platforms.
+	/// That UX theme is not using OS primitives for rendering input elements.
+	/// Use it if you want exactly the same (modulo fonts) look-n-feel on all platforms.
+	UxTheming(bool),
+}
+
+/// Set various sciter engine global options, see the [`RuntimeOptions`](enum.RuntimeOptions.html).
+pub fn set_options(options: RuntimeOptions) -> std::result::Result<(), ()> {
+	use RuntimeOptions::*;
+	use SCITER_RT_OPTIONS::*;
+	let (option, value) = match options {
+		ConnectionTimeout(ms) => (SCITER_CONNECTION_TIMEOUT, ms as usize),
+		OnHttpsError(behavior) => (SCITER_HTTPS_ERROR, behavior as usize),
+		GpuBlacklist(json) => (SCITER_SET_GPU_BLACKLIST, json.as_bytes().as_ptr() as usize),
+		ScriptFeatures(mask) => (SCITER_SET_SCRIPT_RUNTIME_FEATURES, mask as usize),
+		GfxLayer(backend) => (SCITER_SET_GFX_LAYER, backend as usize),
+		DebugMode(enable) => (SCITER_SET_DEBUG_MODE, enable as usize),
+		UxTheming(enable) => (SCITER_SET_UX_THEMING, enable as usize),
+	};
+	let ok = (_API.SciterSetOption)(std::ptr::null_mut(), option, value);
+	if ok != 0 {
+		Ok(())
+	} else {
+		Err(())
+	}
+}
+
 /// Set various sciter engine global options, see the [`SCITER_RT_OPTIONS`](enum.SCITER_RT_OPTIONS.html).
+#[deprecated(since = "0.5.40", note = "please use `sciter::set_options()` instead.")]
 pub fn set_option(option: SCITER_RT_OPTIONS, value: usize) -> std::result::Result<(), ()> {
 	let ok = (_API.SciterSetOption)(std::ptr::null_mut(), option, value);
-	if ok != 0 { Ok(()) } else { Err(()) }
+	if ok != 0 {
+		Ok(())
+	} else {
+		Err(())
+	}
 }

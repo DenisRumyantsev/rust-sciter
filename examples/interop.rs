@@ -20,7 +20,7 @@ impl Drop for EventHandler {
 
 impl EventHandler {
 
-	fn script_call_test(&self, args: &[Value], root: Element) -> Option<Value> {
+	fn script_call_test(&self, args: &[Value], root: &Element) -> Option<Value> {
 
 		println!("root: {:?}", root);
 		// return None;
@@ -46,7 +46,7 @@ impl EventHandler {
 		let answer = root.call_function("raise_error", &make_args!(17, "42", false));
 		println!(" answer is {:?}", answer);
 
-		println!("calling unexisting function");
+		println!("calling inexisting function");
 		let answer = root.call_function("raise_error2", &[]);
 		println!(" answer is {:?}", answer);
 
@@ -57,12 +57,12 @@ impl EventHandler {
 		Value::from(format!("Rust window ({})", arg))
 	}
 
-	fn GetNativeApi(&mut self, ) -> Value {
+	fn GetNativeApi(&mut self) -> Value {
 
 		fn on_add(args: &[Value]) -> Value {
 			let ints = args.iter().map(|x| x.to_int().unwrap());
 			// let sum: i32 = ints.sum();	// error: issue #27739
-			let sum: i32 = ints.fold(0, |sum, x| sum + x);
+			let sum: i32 = ints.sum();
 			Value::from(sum)
 		}
 
@@ -76,7 +76,7 @@ impl EventHandler {
 		}
 
 		let on_mul = |args: &[Value]|  -> Value {
-			let prod = args.iter().map(|x| x.to_int().unwrap()).fold(1, |total, x| total * x);
+			let prod: i32 = args.iter().map(|x| x.to_int().unwrap()).product();
 			Value::from(prod)
 		};
 
@@ -124,7 +124,7 @@ impl sciter::EventHandler for EventHandler {
 		}
 
 		if name == "ScriptCallTest" {
-			return self.script_call_test(argv, Element::from(root));
+			return self.script_call_test(argv, &Element::from(root));
 		}
 
 		None
@@ -132,11 +132,44 @@ impl sciter::EventHandler for EventHandler {
 
 }
 
+fn check_options() {
+	for arg in std::env::args() {
+		if arg.starts_with("--sciter-gfx=") {
+			use sciter::GFX_LAYER;
+			let backend = match arg.split_at("--sciter-gfx=".len()).1.trim() {
+				"auto" => GFX_LAYER::AUTO,
+				"cpu" => GFX_LAYER::CPU,
+				"skia" | "skia-cpu" => GFX_LAYER::SKIA_CPU,
+				"skia-opengl" => GFX_LAYER::SKIA_OPENGL,
+
+				#[cfg(windows)]
+				"d2d" => GFX_LAYER::D2D,
+				#[cfg(windows)]
+				"warp" => GFX_LAYER::WARP,
+
+				_ => GFX_LAYER::AUTO,
+			};
+			println!("setting {:?} backend", backend);
+			let ok = sciter::set_options(sciter::RuntimeOptions::GfxLayer(backend));
+			if let Err(e) = ok {
+				println!("failed to set backend: {:?}", e);
+			}
+
+		} else if arg.starts_with("--ux-theme") {
+			#[cfg(windows)]
+			sciter::set_options(sciter::RuntimeOptions::UxTheming(true)).ok();
+		}
+	}
+}
+
 fn main() {
+	// interop --sciter-gfx=cpu --ux-theme
+	check_options();
+
 	let html = include_bytes!("interop.htm");
 	let handler = EventHandler { root: None };
 	let mut frame = sciter::Window::new();
 	frame.event_handler(handler);
-	frame.load_html(html, None);
+	frame.load_html(html, Some("example://interop.htm"));
 	frame.run_app();
 }

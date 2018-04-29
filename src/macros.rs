@@ -62,7 +62,21 @@ macro_rules! pack_args {
 	};
 }
 
-/// Make `[Value]` sequence to call the sciter script function. Used in `call_function()` and `call_method()` calls.
+/// Pack arguments into a `[Value]` array to call sciter script functions.
+///
+/// Used in [`Element.call_function()`](dom/struct.Element.html#method.call_function),
+/// [`Element.call_method()`](dom/struct.Element.html#method.call_method),
+/// [`Host.call_function()`](host/struct.Host.html#method.call_function),
+/// [`Value.call()`](value/struct.Value.html#method.call).
+///
+/// ## Example:
+///
+/// ```rust,ignore
+/// # #![doc(test(no_crate_inject))]
+/// # #[macro_use] extern crate sciter;
+/// let value = sciter::Value::new();
+/// let result = value.call(None, &make_args!(1, "2", 3.0), Some(file!())).unwrap();
+/// ```
 #[macro_export]
 macro_rules! make_args {
 	() => { { let args : [$crate::value::Value; 0] = []; args } };
@@ -105,7 +119,7 @@ macro_rules! dispatch_script_call {
 		 )*
 	) => {
 
-		fn dispatch_script_call(&mut self, root: sciter::HELEMENT, name: &str, argv: &[$crate::Value]) -> Option<$crate::Value>
+		fn dispatch_script_call(&mut self, _root: $crate::HELEMENT, name: &str, argv: &[$crate::Value]) -> Option<$crate::Value>
 		{
 			match name {
 				$(

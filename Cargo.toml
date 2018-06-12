@@ -1,6 +1,6 @@
 [package]
 name = "sciter-rs"
-version = "0.5.40"
+version = "0.5.42"
 description = "Rust bindings for Sciter - Embeddable HTML/CSS/script engine (cross-platform desktop GUI toolkit). Also capable with DirectX / OpenGL."
 keywords = ["gui", "gtk", "cocoa", "opengl", "skia"]
 categories = ["gui", "web-programming", "rendering::graphics-api", "api-bindings"]
@@ -31,6 +31,7 @@ crate-type = ["rlib"]
 [features]
 default = []
 nightly = []
+dynamic = []
 
 [dependencies]
 libc = "0.2"
@@ -77,3 +78,7 @@ path = "examples/archived.rs"
 [[example]]
 name = "video"
 path = "examples/video.rs"
+
+[[example]]
+name = "clock"
+path = "examples/clock.rs"

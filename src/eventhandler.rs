@@ -2,7 +2,7 @@ use capi::sctypes::*;
 use capi::scbehavior::*;
 use capi::scdom::{HELEMENT};
 use value::Value;
-use dom::event::{EventHandler, EventReason};
+use dom::event::EventHandler;
 
 #[repr(C)]
 pub struct WindowHandler<T>
@@ -108,7 +108,7 @@ fn process_events(me: &mut EventHandler, he: HELEMENT, evtg: UINT, params: LPVOI
 	let evtg : EVENT_GROUPS = unsafe { ::std::mem::transmute(evtg) };
 	// assert!(!he.is_null() || evtg == EVENT_GROUPS::SUBSCRIPTIONS_REQUEST);
 	if he.is_null() && evtg != EVENT_GROUPS::SUBSCRIPTIONS_REQUEST {
-		println!("warning! null element for {:?}", evtg);
+		eprintln!("[sciter] warning! null element for {:?}", evtg);
 	}
 
 	let result = match evtg {
@@ -145,6 +145,7 @@ fn process_events(me: &mut EventHandler, he: HELEMENT, evtg: UINT, params: LPVOI
 			let scnm = params as *const BEHAVIOR_EVENT_PARAMS;
 			let nm = unsafe { &*scnm };
 
+      use dom::event::EventReason;
 			let code :BEHAVIOR_EVENTS = unsafe{ ::std::mem::transmute(nm.cmd & 0x0_0FFF) };
 			let phase: PHASE_MASK = unsafe { ::std::mem::transmute(nm.cmd & 0xFFFF_F000) };
 			let reason = match code {
@@ -164,7 +165,7 @@ fn process_events(me: &mut EventHandler, he: HELEMENT, evtg: UINT, params: LPVOI
 			};
 
 			if he.is_null() {
-				println!("warning! null element for {:?}:{:?}", evtg, code);
+				eprintln!("[sciter] warning! null element for {:?}:{:?}", evtg, code);
 			}
 
 			if phase == PHASE_MASK::SINKING {	// catch this only once
@@ -199,11 +200,83 @@ fn process_events(me: &mut EventHandler, he: HELEMENT, evtg: UINT, params: LPVOI
 			handled
 		},
 
+    EVENT_GROUPS::HANDLE_METHOD_CALL => {
+      assert!(!params.is_null());
+      let scnm = params as *const METHOD_PARAMS;
+      let nm = unsafe { & *scnm };
+      let code: BEHAVIOR_METHOD_IDENTIFIERS = unsafe { ::std::mem::transmute((*nm).method) };
+      use capi::scbehavior::BEHAVIOR_METHOD_IDENTIFIERS::*;
+
+      // output values
+      let mut method_value = Value::new();
+      let mut is_empty = false;
+
+      let handled = {
+
+        // unpack method parameters
+        use dom::event::MethodParams;
+        let mut reason = match code {
+          DO_CLICK => {
+            MethodParams::Click
+          },
+          IS_EMPTY => {
+            MethodParams::IsEmpty(&mut is_empty)
+          },
+          GET_VALUE => {
+            MethodParams::GetValue(&mut method_value)
+          },
+          SET_VALUE => {
+            // Value from Sciter.
+            let payload = params as *const VALUE_PARAMS;
+            let pm = unsafe { & *payload };
+            MethodParams::SetValue(Value::from(&pm.value))
+          },
+
+          _ => {
+            MethodParams::Custom((*nm).method, params)
+          },
+        };
+
+        // call event handler
+        let handled = me.on_method_call(he, reason);
+        handled
+      };
+
+      if handled {
+        // Pack values back to Sciter.
+        match code {
+          GET_VALUE => {
+            let payload = params as *mut VALUE_PARAMS;
+            let pm = unsafe { &mut *payload };
+            method_value.pack_to(&mut pm.value);
+          },
+
+          IS_EMPTY => {
+            let payload = params as *mut IS_EMPTY_PARAMS;
+            let pm = unsafe { &mut *payload };
+            pm.is_empty = is_empty as UINT;
+          },
+
+          _ => {},
+        }
+      }
+      // we've done here
+      handled
+    },
+
 		EVENT_GROUPS::HANDLE_TIMER => {
 			assert!(!params.is_null());
 			let scnm = params as *const TIMER_PARAMS;
 			let nm = unsafe { & *scnm };
 			let handled = me.on_timer(he, nm.timerId as u64);
+			handled
+		},
+
+		EVENT_GROUPS::HANDLE_DRAW => {
+			assert!(!params.is_null());
+			let scnm = params as *const DRAW_PARAMS;
+			let nm = unsafe { & *scnm };
+			let handled = me.on_draw(he, nm.gfx, &nm.area, nm.layer);
 			handled
 		},
 

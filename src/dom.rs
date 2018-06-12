@@ -159,11 +159,11 @@ use ::{_API};
 use capi::sctypes::*;
 use value::Value;
 
-pub use capi::scdom::{SCDOM_RESULT, HELEMENT, SET_ELEMENT_HTML, ELEMENT_AREAS};
 use capi::scbehavior::{CLICK_REASON, BEHAVIOR_EVENTS, BEHAVIOR_EVENT_PARAMS};
 
-pub use dom::event::EventHandler;
-pub use dom::event::EventReason;
+pub use capi::scdom::{SCDOM_RESULT, HELEMENT, SET_ELEMENT_HTML, ELEMENT_AREAS};
+pub use dom::event::{EventHandler, EventReason};
+
 
 /// A specialized `Result` type for DOM operations.
 pub type Result<T> = ::std::result::Result<T, SCDOM_RESULT>;
@@ -248,7 +248,7 @@ impl Element {
 
 	//\name Creation
 
-	/// Construct Element object from HELEMENT handle.
+	/// Construct Element object from `HELEMENT` handle.
 	pub fn from(he: HELEMENT) -> Element {
 		Element { he: Element::use_or(he) }
 	}
@@ -499,6 +499,61 @@ impl Element {
 		let ok = (_API.SciterCallScriptingMethod)(self.he, name.as_ptr(), argv.as_ptr(), argv.len() as UINT, rv.as_ptr());
 		return ok_or!(rv, ok, SCDOM_RESULT::OPERATION_FAILED);
 	}
+
+  /// Call behavior specific method.
+  pub fn call_behavior_method(&self, params: event::MethodParams) -> Result<()> {
+    let call = |p| {
+      (_API.SciterCallBehaviorMethod)(self.he, p)
+    };
+    use capi::scbehavior::{METHOD_PARAMS, VALUE_PARAMS, IS_EMPTY_PARAMS};
+    use capi::scbehavior::BEHAVIOR_METHOD_IDENTIFIERS::*;
+    let ok = match params {
+      event::MethodParams::Click => {
+        let mut p = METHOD_PARAMS {
+          method: DO_CLICK as u32,
+        };
+        call(&mut p as *mut _)
+      },
+      event::MethodParams::SetValue(v) => {
+        let mut p = VALUE_PARAMS {
+          method: SET_VALUE as u32,
+          value: Default::default(),
+        };
+        v.pack_to(&mut p.value);
+        call(&mut p as *mut _ as *mut METHOD_PARAMS)
+      },
+      event::MethodParams::GetValue(retv) => {
+        let mut p = VALUE_PARAMS {
+          method: SET_VALUE as u32,
+          value: Default::default(),
+        };
+        let ok = call(&mut p as *mut _ as *mut METHOD_PARAMS);
+        if ok != SCDOM_RESULT::OK {
+          return Err(ok);
+        }
+        *retv = Value::from(&p.value);
+        ok
+      },
+      event::MethodParams::IsEmpty(retv) => {
+        let mut p = IS_EMPTY_PARAMS {
+          method: IS_EMPTY as u32,
+          is_empty: Default::default(),
+        };
+        let ok = call(&mut p as *mut _ as *mut METHOD_PARAMS);
+        if ok != SCDOM_RESULT::OK {
+          return Err(ok);
+        }
+        *retv = p.is_empty != 0;
+        ok
+      },
+
+      _ => {
+        // Can't handle `MethodParams::Custom` yet.
+        SCDOM_RESULT::INVALID_PARAMETER
+      },
+    };
+    ok_or!((), ok)
+  }
 
 
 	//\name Attributes
@@ -798,21 +853,22 @@ impl Element {
 
 	/// Call specified function for every element in a DOM that meets specified CSS selectors.
 	fn select_elements<T: ElementVisitor>(&self, selector: &str, callback: T) -> Result<Vec<Element>> {
-		use ::capi::schandler::NativeHandler;
 		extern "system" fn inner<T: ElementVisitor>(he: HELEMENT, param: LPVOID) -> BOOL {
-			let obj = NativeHandler::get_data::<T>(&param);
+      let p = param as *mut T;
+			let obj = unsafe { &mut *p };
 			let e = Element::from(he);
 			let stop = obj.on_element(e);
 			return stop as BOOL;
 		}
 		let (s,_) = s2u!(selector);
-		let handler = NativeHandler::from(callback);
-		let ok = (_API.SciterSelectElements)(self.he, s.as_ptr(), inner::<T>, handler.as_mut_ptr());
+		let handler = Box::new(callback);
+    let param = Box::into_raw(handler);
+		let ok = (_API.SciterSelectElements)(self.he, s.as_ptr(), inner::<T>, param as LPVOID);
+    let handler = unsafe { Box::from_raw(param) };
 		if ok != SCDOM_RESULT::OK {
 			return Err(ok);
 		}
-		let obj = handler.as_ref::<T>();
-		return Ok(obj.result());
+		return Ok(handler.result());
 	}
 
 	/// Will find first parent element starting from this satisfying given css selector(s).
@@ -850,7 +906,18 @@ impl Element {
 		ok_or!((), ok)
 	}
 
-	/// Start Timer for the element. Element will receive `on_timer` event.
+	/// Refresh element area in its window.
+	///
+	/// If the element has drawing behavior attached it will receive [`on_draw`](event/trait.EventHandler.html#method.on_draw) call after that.
+	pub fn refresh(&self) -> Result<()> {
+		let rect = self.get_location(ELEMENT_AREAS::self_content())?;
+		let ok = (_API.SciterRefreshElementArea)(self.he, rect);
+		ok_or!((), ok)
+	}
+
+	/// Start Timer for the element.
+	///
+	/// Element will receive [`on_timer`](event/trait.EventHandler.html#method.on_timer) events.
 	///
 	/// Note that timer events are not bubbling, so you need attach handler to the target element directly.
 	pub fn start_timer(&self, period_ms: u32, timer_id: u64) -> Result<()> {
@@ -872,7 +939,7 @@ impl Element {
 	pub fn attach_handler<Handler: EventHandler>(&mut self, handler: Handler) -> Result<u64> {
 		// make native handler
 		let boxed = Box::new(handler);
-		let ptr = Box::into_raw(boxed);
+		let ptr = Box::into_raw(boxed);	// dropped in `_event_handler_proc`
 		let token = ptr as usize as u64;
 		let ok = (_API.SciterAttachEventHandler)(self.he, ::eventhandler::_event_handler_proc::<Handler>, ptr as LPVOID);
 		ok_or!(token, ok)
@@ -909,20 +976,21 @@ impl ::std::fmt::Display for Element {
 		}
 		// "tag#id.class|type(name)"
 		// "tag#id.class"
-		let (t,n,i,c) = (self.get_attribute("type"), self.get_attribute("name"), self.get_attribute("id"), self.get_attribute("class"));
-		let tag = self.get_tag();
+
+    let tag = self.get_tag();
 		try!(f.write_str(&tag));
-		if i.is_some() {
-			try!(write!(f, "#{}", i.unwrap()));
+
+		if let Some(i) = self.get_attribute("id") {
+			try!(write!(f, "#{}", i));
 		}
-		if c.is_some() {
-			try!(write!(f, ".{}", c.unwrap()));
+    if let Some(c) = self.get_attribute("class") {
+			try!(write!(f, ".{}", c));
 		}
-		if t.is_some() {
-			try!(write!(f, "|{}", t.unwrap()));
+    if let Some(t) = self.get_attribute("type") {
+			try!(write!(f, "|{}", t));
 		}
-		if n.is_some() {
-			try!(write!(f, "({})", n.unwrap()));
+    if let Some(n) = self.get_attribute("name") {
+			try!(write!(f, "({})", n));
 		}
 		return Ok(());
 	}
@@ -1021,7 +1089,6 @@ SciterAttachHwndToElement
 SciterCallBehaviorMethod
 SciterCombineURL
 SciterControlGetType
-SciterFireEvent
 SciterGetElementIntrinsicHeight
 SciterGetElementIntrinsicWidths
 SciterGetElementLocation
@@ -1035,12 +1102,9 @@ SciterHidePopup
 SciterHttpRequest
 SciterIsElementEnabled
 SciterIsElementVisible
-SciterPostEvent
-SciterRefreshElementArea
 SciterReleaseCapture
 SciterRequestElementData
 SciterScrollToView
-SciterSendEvent
 SciterSetCapture
 SciterSetElementState
 SciterSetHighlightedElement
@@ -1189,10 +1253,12 @@ This way you can establish interaction between scipt and native code inside your
 
 */
 
-	pub use capi::scbehavior::{CLICK_REASON, EVENT_GROUPS, EDIT_CHANGED_REASON, BEHAVIOR_EVENTS, PHASE_MASK};
+	pub use capi::scbehavior::{EVENT_GROUPS, BEHAVIOR_EVENTS, PHASE_MASK};
+  pub use capi::scbehavior::{CLICK_REASON, EDIT_CHANGED_REASON, DRAW_EVENTS};
 
 	use capi::sctypes::*;
 	use capi::scdom::HELEMENT;
+	use capi::scgraphics::HGFX;
 	use value::Value;
 
 	/// Default subscription events
@@ -1210,9 +1276,33 @@ This way you can establish interaction between scipt and native code inside your
 		General(CLICK_REASON),
 		/// Edit control change trigger.
 		EditChanged(EDIT_CHANGED_REASON),
-		/// `<video>` request for frame source binding (*unsupported yet*).
+		/// `<video>` request for frame source binding.
+    ///
+    /// See the [`sciter::video`](../../video/index.html) module for more reference.
 		VideoBind(LPVOID),
 	}
+
+  /// Behavior method params.
+  ///
+  /// Sciter sends these events to native behaviors.
+  #[derive(Debug)]
+  pub enum MethodParams<'a> {
+    /// Click event (either from mouse or code).
+    Click,
+
+    /// Get current [`:empty`](https://sciter.com/docs/content/sciter/States.htm) state,
+    /// i.e. if behavior has no children and no text.
+    IsEmpty(&'a mut bool),
+
+    /// Get the current value of the behavior.
+    GetValue(&'a mut Value),
+
+    /// Set the current value of the behavior.
+    SetValue(Value),
+
+    /// Custom methods, unknown for engine. Sciter will not intrepret it and will do just dispatching.
+    Custom(u32, LPVOID),
+  }
 
 
 	/// DOM event handler which can be attached to any DOM element.
@@ -1228,7 +1318,7 @@ This way you can establish interaction between scipt and native code inside your
 	#[allow(unused_variables)]
 	pub trait EventHandler {
 
-		/// Return list of event groups this event_handler is subscribed to.
+		/// Return list of event groups this event handler is subscribed to.
 		///
 		/// Default is `HANDLE_BEHAVIOR_EVENT | HANDLE_SCRIPTING_METHOD_CALL`.
 		/// See also [`default_events()`](fn.default_events.html).
@@ -1237,36 +1327,79 @@ This way you can establish interaction between scipt and native code inside your
 		}
 
 		/// Called when handler was attached to element or window.
-		/// `root` is NULL if attaching to window without loaded document.
+		/// `root` is `NULL` if attaching to window without loaded document.
+    ///
+    /// **Subscription**: always.
 		fn attached(&mut self, root: HELEMENT) {}
 
 		/// Called when handler was detached from element or window.
+    ///
+    /// **Subscription**: always.
 		fn detached(&mut self, root: HELEMENT) {}
 
-		/// Notification that document finishes its loading - all requests for external resources are finished
+		/// Notification that document finishes its loading - all requests for external resources are finished.
+    ///
+    /// **Subscription**: requires [`HANDLE_BEHAVIOR_EVENT`](enum.EVENT_GROUPS.html),
+    /// but will be sent only for the root element (`<html>`).
 		fn document_complete(&mut self, root: HELEMENT, target: HELEMENT) {}
 
 		/// The last notification before document removal from the DOM.
+    ///
+    /// **Subscription**: requires [`HANDLE_BEHAVIOR_EVENT`](enum.EVENT_GROUPS.html),
+    /// but will be sent only for the root element (`<html>`).
 		fn document_close(&mut self, root: HELEMENT, target: HELEMENT) {}
 
+    /// Behavior method calls from script or other behaviors.
+    ///
+    /// Return `false` to skip this event.
+    ///
+    /// **Subscription**: requires [`HANDLE_METHOD_CALL`](enum.EVENT_GROUPS.html).
+    fn on_method_call(&mut self, root: HELEMENT, params: MethodParams) -> bool { return false }
+
 		/// Script calls from CSSS! script and TIScript.
+    ///
+    /// Return `None` to skip this event.
+    ///
+    /// **Subscription**: requires [`HANDLE_SCRIPTING_METHOD_CALL`](enum.EVENT_GROUPS.html).
 		fn on_script_call(&mut self, root: HELEMENT, name: &str, args: &[Value]) -> Option<Value> {
 			return self.dispatch_script_call(root, name, args);
 		}
 
 		/// Autogenerated dispatcher for script calls.
+    #[doc(hidden)]
 		fn dispatch_script_call(&mut self, root: HELEMENT, name: &str, args: &[Value]) -> Option<Value> {
 			return None;
 		}
 
 		/// Notification event from builtin behaviors.
+    ///
+    /// Return `false` to skip this event.
+    ///
+    /// **Subscription**: requires [`HANDLE_BEHAVIOR_EVENT`](enum.EVENT_GROUPS.html).
 		fn on_event(&mut self, root: HELEMENT, source: HELEMENT, target: HELEMENT, code: BEHAVIOR_EVENTS, phase: PHASE_MASK, reason: EventReason) -> bool {
 			return false;
 		}
 
 		/// Timer event from attached element.
+    ///
+    /// Return `false` to skip this event.
+    ///
+    /// **Subscription**: requires [`HANDLE_TIMER`](enum.EVENT_GROUPS.html).
 		fn on_timer(&mut self, root: HELEMENT, timer_id: u64) -> bool { return false; }
 
+		/// Drawing request event.
+		///
+		/// It allows to intercept drawing events of an `Element` and to manually draw its content, background and foreground layers.
+    ///
+    /// Return `false` to skip this event.
+    ///
+    /// **Subscription**: requires [`HANDLE_DRAW`](enum.EVENT_GROUPS.html).
+		fn on_draw(&mut self, root: HELEMENT, gfx: HGFX, area: &RECT, layer: DRAW_EVENTS) -> bool { return false; }
+
+		/// Size changed event.
+    ///
+    /// **Subscription**: requires [`HANDLE_SIZE`](enum.EVENT_GROUPS.html).
+		fn on_size(&mut self, root: HELEMENT) {}
 	}
 
 }

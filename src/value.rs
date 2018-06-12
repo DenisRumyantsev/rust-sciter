@@ -1,6 +1,6 @@
 /*! Rust interface to the [`sciter::value`](https://github.com/c-smile/sciter-sdk/blob/master/include/value.h).
 
-Sciter `Value` holds superset of JSON objects.
+Sciter [`Value`](struct.Value.html) holds superset of JSON objects.
 
 It can contain as pure JSON objects (numbers, strings, maps and arrays) as internal objects like DOM elements,
 proxies of script functions, objects and arrays.
@@ -8,7 +8,7 @@ proxies of script functions, objects and arrays.
 
 ## Basic usage
 
-You can create an empty (undefined) Sciter `Value` with `new()`:
+You can create an empty (undefined) Sciter [`Value`](struct.Value.html) with `new()`:
 
 ```
 use sciter::Value;
@@ -79,7 +79,29 @@ assert_eq!(v.len(), 3);
 assert_eq!(v[0], Value::from("1"));
 ```
 
-To access its contents you should use one of `to_` methods:
+And also there is a couple of macros for container literals with specific type
+which are just shorthands for manual construction using the
+[`set_item()`](struct.Value.html#method.set_item) and [`push()`](struct.Value.html#method.push)
+methods:
+
+```
+# #[macro_use] extern crate sciter;
+# fn main() {
+let map = vmap! {
+  "one" => 1,
+  "two" => 2.0,
+  "three" => "",
+};
+assert!(map.is_map());
+assert_eq!(map.len(), 3);
+
+let array = varray![1, 2.0, "three"];
+assert!(array.is_array());
+assert_eq!(array.len(), 3);
+# }
+```
+
+To access its contents you should use one of [`to_`](struct.Value.html#method.to_int) methods:
 
 ```
 use sciter::Value;
@@ -137,7 +159,7 @@ assert!(v.get_item("one").is_int());
 
 use ::{_API};
 use capi::sctypes::*;
-use capi::scvalue::{VALUE, VALUE_UNIT_TYPE_STRING};
+use capi::scvalue::{VALUE, VALUE_UNIT_TYPE_STRING, VALUE_UNIT_TYPE_OBJECT};
 pub use capi::scvalue::{VALUE_RESULT, VALUE_STRING_CVT_TYPE, VALUE_TYPE};
 use chrono::prelude::*;
 
@@ -246,11 +268,6 @@ impl Value {
 		&self.data as *const VALUE
 	}
 
-	#[doc(hidden)]
-	pub fn as_mut_ptr(&self) -> * mut VALUE {
-		unsafe { ::std::mem::transmute(self.as_cptr()) }
-	}
-
 	/// Get the inner type of the value.
 	pub fn get_type(&self) -> VALUE_TYPE {
 		return self.data.t;
@@ -334,6 +351,7 @@ impl Value {
 	/// * `T_OBJECT` - names of key/value properties in the object;
 	/// * `T_FUNCTION` - names of arguments of the function (if any).
 	///
+  /// The iterator element type is `Value` (as a key).
 	pub fn keys(&self) -> KeyIterator {
 		KeyIterator {
 			base: self,
@@ -349,6 +367,7 @@ impl Value {
 	/// * `T_OBJECT` - values of key/value properties in the object;
 	/// * `T_FUNCTION` - values of arguments of the function.
 	///
+  /// The iterator element type is `Value`.
 	pub fn values(&self) -> SeqIterator {
 		SeqIterator {
 			base: self,
@@ -359,8 +378,9 @@ impl Value {
 
 	/// An iterator visiting all key-value pairs in arbitrary order.
 	///
+  /// The `Value` must has a key-value type (map, object, function).
+  ///
 	/// The iterator element type is `(Value, Value)`.
-	/// The `Value` must has a key-value type (map, object, function).
 	pub fn items(&self) -> Vec<(Value, Value)> {
 		type Pair = Vec<(Value, Value)>;
 		let result = Box::new(Vec::with_capacity(self.len()));
@@ -368,10 +388,10 @@ impl Value {
 		extern "system" fn on_pair(param: LPVOID, pkey: *const VALUE, pval: *const VALUE) -> BOOL {
 			assert!(!param.is_null());
 			unsafe {
-				let mut result = Box::from_raw(param as *mut Pair);
+				let result = param as *mut Pair;
+				let result = &mut *result;
 				let src = (Value::copy_from(pkey), Value::copy_from(pval));
 				result.push(src);
-				Box::into_raw(result);	// prevent free
 			}
 			return true as BOOL;
 		}
@@ -540,6 +560,7 @@ impl Value {
 		return v;
 	}
 
+  #[cfg_attr(feature = "cargo-clippy", allow(mut_from_ref))]
 	fn ensure_tmp_mut(&self) -> &mut Value {
 		let cp = self as *const Value;
 		let mp = cp as *mut Value;
@@ -636,10 +657,54 @@ impl Value {
 	pub fn is_object(&self) -> bool {
 		self.data.t == VALUE_TYPE::T_OBJECT
 	}
+
+  // script types:
+  #[allow(missing_docs)]
+  pub fn is_object_array(&self) -> bool {
+    self.data.t == VALUE_TYPE::T_OBJECT && self.data.u == VALUE_UNIT_TYPE_OBJECT::ARRAY as UINT
+  }
+  #[allow(missing_docs)]
+  pub fn is_object_map(&self) -> bool {
+    self.data.t == VALUE_TYPE::T_OBJECT && self.data.u == VALUE_UNIT_TYPE_OBJECT::OBJECT as UINT
+  }
+  #[allow(missing_docs)]
+  pub fn is_object_class(&self) -> bool {
+    self.data.t == VALUE_TYPE::T_OBJECT && self.data.u == VALUE_UNIT_TYPE_OBJECT::OBJECT as UINT
+  }
+  #[allow(missing_docs)]
+  pub fn is_object_native(&self) -> bool {
+    self.data.t == VALUE_TYPE::T_OBJECT && self.data.u == VALUE_UNIT_TYPE_OBJECT::NATIVE as UINT
+  }
+  #[allow(missing_docs)]
+  pub fn is_object_function(&self) -> bool {
+    self.data.t == VALUE_TYPE::T_OBJECT && self.data.u == VALUE_UNIT_TYPE_OBJECT::FUNCTION as UINT
+  }
+  #[allow(missing_docs)]
+  pub fn is_object_error(&self) -> bool {
+    self.data.t == VALUE_TYPE::T_OBJECT && self.data.u == VALUE_UNIT_TYPE_OBJECT::ERROR as UINT
+  }
 	#[allow(missing_docs)]
 	pub fn is_dom_element(&self) -> bool {
 		self.data.t == VALUE_TYPE::T_DOM_OBJECT
 	}
+
+  // generic check (native or object):
+  #[allow(missing_docs)]
+  pub fn is_varray(&self) -> bool {
+    self.is_array() || self.is_object()
+  }
+  #[allow(missing_docs)]
+  pub fn is_vmap(&self) -> bool {
+    self.is_map() || self.is_object_map()
+  }
+  #[allow(missing_docs)]
+  pub fn is_vfunction(&self) -> bool {
+    self.is_function() || self.is_object_function() || self.is_native_function()
+  }
+  #[allow(missing_docs)]
+  pub fn is_verror(&self) -> bool {
+    self.is_error_string() || self.is_object_error()
+  }
 
 	fn assign_str(&mut self, val: &str, unit: VALUE_UNIT_TYPE_STRING) -> VALUE_RESULT {
 		let (s,n) = s2w!(val);
@@ -745,7 +810,7 @@ impl ::std::ops::Index<usize> for Value {
 	type Output = Value;
 	fn index(&self, index: usize) -> &Self::Output {
 		let tmp = self.ensure_tmp_mut();
-		(_API.ValueNthElementValue)(self.as_cptr(), index as INT, tmp.as_mut_ptr());
+		(_API.ValueNthElementValue)(self.as_cptr(), index as INT, tmp.as_ptr());
 		return tmp;
 	}
 }
@@ -765,7 +830,7 @@ impl ::std::ops::Index<Value> for Value {
 	type Output = Value;
 	fn index(&self, key: Value) -> &Self::Output {
 		let tmp = self.ensure_tmp_mut();
-		(_API.ValueGetValueOfKey)(self.as_cptr(), key.as_cptr(), tmp.as_mut_ptr());
+		(_API.ValueGetValueOfKey)(self.as_cptr(), key.as_cptr(), tmp.as_ptr());
 		return tmp;
 	}
 }
@@ -775,7 +840,7 @@ impl ::std::ops::Index<&'static str> for Value {
 	type Output = Value;
 	fn index(&self, key: &'static str) -> &Self::Output {
 		let tmp = self.ensure_tmp_mut();
-		(_API.ValueGetValueOfKey)(self.as_cptr(), Value::from(key).as_cptr(), tmp.as_mut_ptr());
+		(_API.ValueGetValueOfKey)(self.as_cptr(), Value::from(key).as_cptr(), tmp.as_ptr());
 		return tmp;
 	}
 }
@@ -789,6 +854,13 @@ impl ::std::ops::IndexMut<Value> for Value {
 		(_API.ValueSetValueToKey)(ptr, key.as_cptr(), tmp.as_ptr());
 		return tmp;
 	}
+}
+
+/// Value from native `VALUE` object.
+impl<'a> From<&'a VALUE> for Value {
+  fn from(val: &'a VALUE) -> Self {
+    unsafe { Value::copy_from(val as *const _) }
+  }
 }
 
 /// Value from integer.
@@ -889,12 +961,40 @@ impl<'a> From<&'a [u8]> for Value {
 	}
 }
 
+// /// Value from sequence of items satisfying `Into<Value>`.
+// impl ::std::iter::FromIterator<Into<Value>> for Value {
+//   fn from_iter<I: IntoIterator<Item=Into<Value>>>(iterator: I) -> Self {
+//     let iterator = iterator.into_iter();
+//     let capacity = iterator.size_hint().0;
+//     let mut v = Value::array(capacity);
+//     for i in iterator {
+//       v.push(Value::from(i));
+//     }
+//     return v;
+//   }
+// }
+
+/// Value from sequence of `Value`.
+impl ::std::iter::FromIterator<Value> for Value {
+  fn from_iter<I: IntoIterator<Item=Value>>(iterator: I) -> Self {
+    let iterator = iterator.into_iter();
+    let capacity = iterator.size_hint().0;
+    let mut v = Value::array(capacity);
+    for (i, m) in iterator.enumerate() {
+      v.set(i, Value::from(m));
+    }
+    return v;
+  }
+}
+
 /// Value from sequence of `i32`.
 impl ::std::iter::FromIterator<i32> for Value {
 	fn from_iter<I: IntoIterator<Item=i32>>(iterator: I) -> Self {
-		let mut v = Value::new();
-		for i in iterator {
-			v.push(Value::from(i));
+    let iterator = iterator.into_iter();
+    let capacity = iterator.size_hint().0;
+		let mut v = Value::array(capacity);
+    for (i, m) in iterator.enumerate() {
+      v.set(i, Value::from(m));
 		}
 		return v;
 	}
@@ -903,9 +1003,11 @@ impl ::std::iter::FromIterator<i32> for Value {
 /// Value from sequence of `f64`.
 impl ::std::iter::FromIterator<f64> for Value {
 	fn from_iter<I: IntoIterator<Item=f64>>(iterator: I) -> Self {
-		let mut v = Value::new();
-		for i in iterator {
-			v.push(Value::from(i));
+    let iterator = iterator.into_iter();
+    let capacity = iterator.size_hint().0;
+    let mut v = Value::array(capacity);
+    for (i, m) in iterator.enumerate() {
+      v.set(i, Value::from(m));
 		}
 		return v;
 	}
@@ -914,9 +1016,11 @@ impl ::std::iter::FromIterator<f64> for Value {
 /// Value from sequence of `&str`.
 impl<'a> ::std::iter::FromIterator<&'a str> for Value {
 	fn from_iter<I: IntoIterator<Item=&'a str>>(iterator: I) -> Self {
-		let mut v = Value::new();
-		for i in iterator {
-			v.push(Value::from(i));
+    let iterator = iterator.into_iter();
+    let capacity = iterator.size_hint().0;
+    let mut v = Value::array(capacity);
+    for (i, m) in iterator.enumerate() {
+      v.set(i, Value::from(m));
 		}
 		return v;
 	}
@@ -925,9 +1029,11 @@ impl<'a> ::std::iter::FromIterator<&'a str> for Value {
 /// Value from sequence of `String`.
 impl ::std::iter::FromIterator<String> for Value {
 	fn from_iter<I: IntoIterator<Item=String>>(iterator: I) -> Self {
-		let mut v = Value::new();
-		for i in iterator {
-			v.push(Value::from(i));
+    let iterator = iterator.into_iter();
+    let capacity = iterator.size_hint().0;
+    let mut v = Value::array(capacity);
+    for (i, m) in iterator.enumerate() {
+      v.set(i, Value::from(m));
 		}
 		return v;
 	}
@@ -940,7 +1046,7 @@ impl<F> From<F> for Value
 	fn from(f: F) -> Value {
 		let mut v = Value::new();
 		let boxed = Box::new(f);
-		let ptr = Box::into_raw(boxed);
+		let ptr = Box::into_raw(boxed);	// dropped in `_functor_release`
 		(_API.ValueNativeFunctorSet)(v.as_ptr(), _functor_invoke::<F>, _functor_release::<F>, ptr as LPVOID);
 		return v;
 	}
@@ -1018,6 +1124,7 @@ impl FromValue for String {
 
 
 /// An iterator visiting all keys of key/value pairs in the map-like `Value` objects.
+#[doc(hidden)]
 pub struct KeyIterator<'a> {
 	base: &'a Value,
 	index: usize,
@@ -1061,6 +1168,7 @@ impl<'a> ::std::iter::DoubleEndedIterator for KeyIterator<'a> {
 
 
 /// An iterator over the sub-elements of a `Value`.
+#[doc(hidden)]
 pub struct SeqIterator<'a> {
 	base: &'a Value,
 	index: usize,

@@ -1,6 +1,7 @@
 //! Sciter host application helpers.
 
 use ::{_API};
+use capi::scdef::SCITER_RT_OPTIONS;
 use capi::sctypes::*;
 use capi::screquest::HREQUEST;
 use capi::schandler::NativeHandler;
@@ -8,7 +9,6 @@ use dom::event::EventHandler;
 use eventhandler::*;
 use value::{Value};
 
-pub use capi::scdef::{SCITER_RT_OPTIONS, SCRIPT_RUNTIME_FEATURES, GFX_LAYER};
 pub use capi::scdef::{LOAD_RESULT, SCN_LOAD_DATA, SCN_DATA_LOADED, SCN_ATTACH_BEHAVIOR, OUTPUT_SUBSYTEMS, OUTPUT_SEVERITY};
 
 
@@ -53,7 +53,7 @@ callback handler registered with `sciter::Window.sciter_handler()` function.
 Your application can provide your own data for such resources (for example from resource section, DB or other storage of your choice)
 or delegate resource loading to built-in HTTP client and file loader or discard loading at all.
 
-Note: This handler should be registere before any `load_html` call in order to send notifications while loading.
+Note: This handler should be registere before any [`load_html()`](struct.Host.html#method.load_html) call in order to send notifications while loading.
 
 */
 #[allow(unused_variables)]
@@ -65,7 +65,7 @@ pub trait HostHandler {
 	/// or save them (including `request_id`) for later usage and answer here with `LOAD_RESULT::LOAD_DELAYED` code.
 	///
 	/// Also you can discard request (data will not be loaded at document) or take care about this request completely (via request API).
-	fn on_data_load(&mut self, pnm: &mut SCN_LOAD_DATA) -> LOAD_RESULT { return LOAD_RESULT::LOAD_DEFAULT; }
+	fn on_data_load(&mut self, pnm: &mut SCN_LOAD_DATA) -> Option<LOAD_RESULT> { return None; }
 
 	/// This notification indicates that external data (for example image) download process completed.
 	fn on_data_loaded(&mut self, pnm: &SCN_DATA_LOADED) { }
@@ -88,11 +88,10 @@ pub trait HostHandler {
 		}
 	}
 
-	/// This function is used as response to `on_data_load` request.
+	/// This function is used as response to [`on_data_load`](#method.on_data_load) request.
 	///
 	/// Parameters here must be taken from `SCN_LOAD_DATA` structure. You can store them for later usage,
-	/// but you must answer as `LOAD_RESULT::LOAD_DELAYED` code and provide an `request_id` here.
-	///
+	/// but you must answer as [`LOAD_DELAYED`](enum.LOAD_RESULT.html#variant.LOAD_DELAYED) code and provide an `request_id` here.
 	fn data_ready(&self, hwnd: HWINDOW, uri: &str, data: &[u8], request_id: Option<HREQUEST>) {
 		let (s,_) = s2w!(uri);
 		match request_id {
@@ -105,14 +104,15 @@ pub trait HostHandler {
 		};
 	}
 
+  /// This function is used as a response to the [`on_attach_behavior`](#method.on_attach_behavior) request
+  /// to attach a newly created behavior `handler` to the requested element.
 	fn attach_behavior<Handler: EventHandler>(&self, pnm: &mut SCN_ATTACH_BEHAVIOR, handler: Handler) {
 		// make native handler
 		let boxed = Box::new(handler);
-		let ptr = Box::into_raw(boxed);
+		let ptr = Box::into_raw(boxed);	// dropped in `_event_handler_proc`
 		pnm.elementProc = ::eventhandler::_event_handler_proc::<Handler>;
 		pnm.elementTag = ptr as LPVOID;
 	}
-
 }
 
 
@@ -130,12 +130,14 @@ use std::cell::RefCell;
 
 type BehaviorList = Vec<(String, Box<Fn() -> Box<EventHandler>>)>;
 type SharedBehaviorList = Rc<RefCell<BehaviorList>>;
+type SharedArchive = Rc<RefCell<Option<Archive>>>;
 
 #[repr(C)]
 struct HostCallback<Callback> {
 	sig: u32,
 	behaviors: SharedBehaviorList,
 	handler: Callback,
+  archive: SharedArchive,
 }
 
 /// Sciter host runtime support.
@@ -143,6 +145,7 @@ pub struct Host {
 	hwnd: HWINDOW,
 	behaviors: SharedBehaviorList,
 	handler: RefCell<NativeHandler>,
+  archive: SharedArchive,
 }
 
 impl Host {
@@ -156,7 +159,12 @@ impl Host {
 	/// or by calling `SciterCreateOnDirectXWindow`.
 	pub fn attach(hwnd: HWINDOW) -> Host {
 		// Host with default debug handler installed
-		let host = Host { hwnd: hwnd, behaviors: Default::default(), handler: Default::default() };
+		let host = Host {
+      hwnd: hwnd,
+      behaviors: Default::default(),
+      handler: Default::default(),
+      archive: Default::default(),
+    };
 		host.setup_callback(DefaultHandler::default());
 		return host;
 	}
@@ -165,7 +173,7 @@ impl Host {
 	pub fn attach_handler<Handler: EventHandler>(&self, handler: Handler) {
 		let hwnd = self.get_hwnd();
 		let boxed = Box::new( WindowHandler { hwnd, handler } );
-		let ptr = Box::into_raw(boxed);
+		let ptr = Box::into_raw(boxed);	// dropped in `_event_handler_window_proc`
 		let func = _event_handler_window_proc::<Handler>;
 		let flags = ::dom::event::default_events();
 		(_API.SciterWindowAttachEventHandler)(hwnd, func, ptr as LPVOID, flags as UINT);
@@ -178,6 +186,7 @@ impl Host {
 		let payload: HostCallback<Callback> = HostCallback {
 			sig: 17,
 			behaviors: Rc::clone(&self.behaviors),
+      archive: Rc::clone(&self.archive),
 			handler: handler,
 		};
 
@@ -197,6 +206,14 @@ impl Host {
 		let pair = (name.to_owned(), make);
 		self.behaviors.borrow_mut().push(pair);
 	}
+
+  /// Register an archive produced by `packfolder`.
+  ///
+  /// See documentation of the [`Archive`](struct.Archive.html).
+  pub fn register_archive(&self, resource: &[u8]) -> Result<()> {
+    *self.archive.borrow_mut() = Some(Archive::open(resource)?);
+    Ok(())
+  }
 
 	/// Set debug mode for specific window or globally.
 	pub fn enable_debug(&self, enable: bool) {
@@ -275,13 +292,6 @@ impl Host {
 		ok_or!(ok, rv, rv)
 	}
 
-	/// Set various sciter engine options, see the [`SCITER_RT_OPTIONS`](../enum.SCITER_RT_OPTIONS.html).
-	#[deprecated(since="0.5.40", note="please use `Window::set_options()` instead.")]
-	pub fn set_option(&self, option: SCITER_RT_OPTIONS, value: usize) -> Result<()> {
-		let ok = (_API.SciterSetOption)(self.hwnd, option, value as UINT_PTR);
-		ok_or!(ok)
-	}
-
 	/// Set home url for sciter resources.
 	///
 	/// If you will set it like `set_home_url("https://sciter.com/modules/")` then
@@ -358,8 +368,22 @@ extern "system" fn _on_handle_notification<T: HostHandler>(pnm: *mut ::capi::scd
 	let result: UINT = match code {
 		SCITER_NOTIFICATION::SC_LOAD_DATA => {
 			let scnm = pnm as *mut SCN_LOAD_DATA;
-			let re = me.on_data_load(unsafe { &mut *scnm} );
-			re as UINT
+      let scnm = unsafe { &mut *scnm};
+			let mut re = me.on_data_load(scnm);
+      if re.is_none() {
+        if let Some(archive) = callback.archive.borrow().as_ref() {
+          let uri = w2s!(scnm.uri);
+          if uri.starts_with("this://app/") {
+            if let Some(data) = archive.get(&uri) {
+              me.data_ready(scnm.hwnd, &uri, data, None);
+            } else {
+              eprintln!("[sciter] error: can't load {:?}", uri);
+            }
+          }
+          re = Some(LOAD_RESULT::LOAD_DEFAULT);
+        }
+      }
+			re.unwrap_or(LOAD_RESULT::LOAD_DEFAULT) as UINT
 		},
 
 		SCITER_NOTIFICATION::SC_DATA_LOADED => {
@@ -382,7 +406,7 @@ extern "system" fn _on_handle_notification<T: HostHandler>(pnm: *mut ::capi::scd
 
 				if let Some(behavior) = behavior {
 					let boxed = Box::new( BoxedHandler { handler: behavior } );
-					let ptr = Box::into_raw(boxed);
+					let ptr = Box::into_raw(boxed);	// dropped in `_event_handler_behavior_proc`
 
 					scnm.elementProc = ::eventhandler::_event_handler_behavior_proc;
 					scnm.elementTag = ptr as LPVOID;
@@ -431,7 +455,7 @@ extern "system" fn _on_debug_notification<T: HostHandler>(param: LPVOID, subsyst
 ///
 /// ```rust,ignore
 /// let archived = include_bytes!("target/assets.rc");
-/// let assets = sciter::host::Archive::open(archived);
+/// let assets = sciter::host::Archive::open(archived).expect("Unable to load archive.");
 ///
 /// // access `assets/index.htm`
 /// let html_data = assets.get("index.htm").unwrap();
@@ -447,9 +471,13 @@ impl Drop for Archive {
 
 impl Archive {
   /// Open archive blob.
-  pub fn open(archived: &[u8]) -> Self {
+  pub fn open(archived: &[u8]) -> Result<Self> {
     let p = (_API.SciterOpenArchive)(archived.as_ptr(), archived.len() as u32);
-    Archive(p)
+    if !p.is_null() {
+      Ok(Archive(p))
+    } else {
+      Err(())
+    }
   }
 
   /// Get an archive item.

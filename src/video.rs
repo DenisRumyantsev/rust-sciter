@@ -5,6 +5,7 @@ use capi::sctypes::{UINT, LPCBYTE};
 pub type Result<T> = ::std::result::Result<T, ()>;
 
 
+/// Color space for video frame.
 #[repr(C)]
 pub enum COLOR_SPACE {
 	Unknown,
@@ -20,11 +21,16 @@ pub enum COLOR_SPACE {
 
 macro_rules! cppcall {
 	// self.func()
-	( $this:ident . $func:ident () ) => {
+	($this:ident . $func:ident ()) => {
 		unsafe {
 			((*$this.vtbl).$func)($this as *mut _)
 		}
 	};
+  (const $this:ident . $func:ident ()) => {
+    unsafe {
+      ((*$this.vtbl).$func)($this as *const _)
+    }
+  };
 
 	// self.func(args...)
 	($this:ident . $func:ident ( $( $arg:expr ),* )) => {
@@ -32,6 +38,11 @@ macro_rules! cppcall {
 			((*$this.vtbl).$func)($this as *mut _, $($arg),* )
 		}
 	};
+  (const $this:ident . $func:ident ( $( $arg:expr ),* )) => {
+    unsafe {
+      ((*$this.vtbl).$func)($this as *const _, $($arg),* )
+    }
+  };
 }
 
 macro_rules! cppresult {
@@ -44,7 +55,7 @@ macro_rules! cppresult {
 	}
 }
 
-
+#[doc(hidden)]
 pub trait NamedInterface {
 	fn get_interface_name() -> &'static [u8];
 
@@ -131,17 +142,17 @@ struct video_source_vtbl {
 	pub pause: extern "system" fn(this: *mut video_source) -> bool,
 	pub stop: extern "system" fn(this: *mut video_source) -> bool,
 
-	pub get_is_ended: extern "system" fn(this: *mut video_source, is_end: *mut bool) -> bool,
+	pub get_is_ended: extern "system" fn(this: *const video_source, is_end: *mut bool) -> bool,
 
-	pub get_position: extern "system" fn(this: *mut video_source, seconds: *mut f64) -> bool,
+	pub get_position: extern "system" fn(this: *const video_source, seconds: *mut f64) -> bool,
 	pub set_position: extern "system" fn(this: *mut video_source, seconds: f64) -> bool,
 
-	pub get_duration: extern "system" fn(this: *mut video_source, seconds: *mut f64) -> bool,
+	pub get_duration: extern "system" fn(this: *const video_source, seconds: *mut f64) -> bool,
 
-	pub get_volume: extern "system" fn(this: *mut video_source, volume: *mut f64) -> bool,
+	pub get_volume: extern "system" fn(this: *const video_source, volume: *mut f64) -> bool,
 	pub set_volume: extern "system" fn(this: *mut video_source, volume: f64) -> bool,
 
-	pub get_balance: extern "system" fn(this: *mut video_source, balance: *mut f64) -> bool,
+	pub get_balance: extern "system" fn(this: *const video_source, balance: *mut f64) -> bool,
 	pub set_balance: extern "system" fn(this: *mut video_source, balance: f64) -> bool,
 	// -->
 }
@@ -163,37 +174,37 @@ impl video_source {
 		cppresult!(self.stop())
 	}
 
-	pub fn is_ended(&mut self) -> Result<bool> {
+	pub fn is_ended(&self) -> Result<bool> {
 		let mut r = false;
-		cppresult!(self.get_is_ended(&mut r as *mut _)).map(|_| r)
+		cppresult!(const self.get_is_ended(&mut r as *mut _)).map(|_| r)
 	}
 
-	pub fn get_position(&mut self) -> Result<f64> {
+	pub fn get_position(&self) -> Result<f64> {
 		let mut r = 0f64;
-		cppresult!(self.get_position(&mut r as *mut _)).map(|_| r)
+		cppresult!(const self.get_position(&mut r as *mut _)).map(|_| r)
 	}
 
 	pub fn set_position(&mut self, seconds: f64) -> Result<()> {
 		cppresult!(self.set_position(seconds))
 	}
 
-	pub fn get_duration(&mut self) -> Result<f64> {
+	pub fn get_duration(&self) -> Result<f64> {
 		let mut r = 0f64;
-		cppresult!(self.get_duration(&mut r as *mut _)).map(|_| r)
+		cppresult!(const self.get_duration(&mut r as *mut _)).map(|_| r)
 	}
 
-	pub fn get_volume(&mut self) -> Result<f64> {
+	pub fn get_volume(&self) -> Result<f64> {
 		let mut r = 0f64;
-		cppresult!(self.get_volume(&mut r as *mut _)).map(|_| r)
+		cppresult!(const self.get_volume(&mut r as *mut _)).map(|_| r)
 	}
 
 	pub fn set_volume(&mut self, volume: f64) -> Result<()> {
 		cppresult!(self.set_volume(volume))
 	}
 
-	pub fn get_balance(&mut self) -> Result<f64> {
+	pub fn get_balance(&self) -> Result<f64> {
 		let mut r = 0f64;
-		cppresult!(self.get_balance(&mut r as *mut _)).map(|_| r)
+		cppresult!(const self.get_balance(&mut r as *mut _)).map(|_| r)
 	}
 
 	pub fn set_balance(&mut self, balance: f64) -> Result<()> {
@@ -218,7 +229,7 @@ struct video_destination_vtbl {
 
 	// <-- video_destination
 	/// Whether this instance of `video_renderer` is attached to a DOM element and is capable of playing.
-	pub is_alive: extern "system" fn(this: *mut video_destination) -> bool,
+	pub is_alive: extern "system" fn(this: *const video_destination) -> bool,
 
 	/// Start streaming/rendering.
 	pub start_streaming: extern "system" fn(this: *mut video_destination, frame_width: i32, frame_height: i32, color_space: COLOR_SPACE, src: *const video_source) -> bool,
@@ -240,8 +251,8 @@ pub struct video_destination {
 impl video_destination {
 
 	/// Whether this instance of `video_renderer` is attached to a DOM element and is capable of playing.
-	pub fn is_alive(&mut self) -> bool {
-		cppcall!(self.is_alive())
+	pub fn is_alive(&self) -> bool {
+		cppcall!(const self.is_alive())
 	}
 
 	/// Start streaming/rendering.
@@ -278,7 +289,7 @@ struct fragmented_video_destination_vtbl {
 
 	// <-- video_destination
 	/// Whether this instance of `video_renderer` is attached to a DOM element and is capable of playing.
-	pub is_alive: extern "system" fn(this: *mut fragmented_video_destination) -> bool,
+	pub is_alive: extern "system" fn(this: *const fragmented_video_destination) -> bool,
 
 	/// Start streaming/rendering.
 	pub start_streaming: extern "system" fn(this: *mut fragmented_video_destination, frame_width: i32, frame_height: i32, color_space: COLOR_SPACE, src: *const video_source) -> bool,
@@ -305,8 +316,8 @@ pub struct fragmented_video_destination {
 impl fragmented_video_destination {
 
 	/// Whether this instance of `video_renderer` is attached to a DOM element and is capable of playing.
-	pub fn is_alive(&mut self) -> bool {
-		cppcall!(self.is_alive())
+	pub fn is_alive(&self) -> bool {
+		cppcall!(const self.is_alive())
 	}
 
 	/// Start streaming/rendering.

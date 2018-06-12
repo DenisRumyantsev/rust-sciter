@@ -50,6 +50,7 @@ pub enum SCRIPT_RUNTIME_FEATURES
 /// Explicitly set a sciter graphics layer.
 #[repr(C)]
 #[derive(Debug)]
+#[derive(Copy, Clone)]
 #[allow(missing_docs)]
 pub enum GFX_LAYER
 {
@@ -111,7 +112,7 @@ pub enum SCITER_RT_OPTIONS
 #[repr(C)]
 pub enum SCITER_CREATE_WINDOW_FLAGS {
 	/// child window only, if this flag is set all other flags ignored
-  SW_CHILD      = (1 << 0),
+  SW_CHILD      = 1,
   /// toplevel window, has titlebar
   SW_TITLEBAR   = (1 << 1),
   /// has resizeable frame
@@ -299,11 +300,6 @@ pub type LPCSTR_RECEIVER  = extern "system" fn (szstr: LPCSTR,  str_length: UINT
 pub type LPCBYTE_RECEIVER = extern "system" fn (szstr: LPCBYTE, str_length: UINT, param: LPVOID);
 
 pub type ELEMENT_BITMAP_RECEIVER = extern "system" fn (rgba: LPCBYTE, x: INT, y: INT, width: UINT, height: UINT, param: LPVOID);
-
-#[repr(C)]
-pub struct METHOD_PARAMS {
-	methodID: UINT,
-}
 
 #[repr(C)]
 pub struct REQUEST_PARAM {

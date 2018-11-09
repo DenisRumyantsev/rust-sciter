@@ -232,6 +232,7 @@ mod ext {
     use std::path::{Path, PathBuf};
 
 
+    // Try to load the library from a specified absolute path.
     fn try_load(path: &Path) -> Option<LPVOID> {
       let bytes = path.as_os_str().as_bytes();
       if let Ok(cstr) = CString::new(bytes) {
@@ -243,6 +244,7 @@ mod ext {
       None
     }
 
+    // Try to find a library (by one of its names) in a specified path.
     fn try_load_from(dir: Option<&Path>) -> Option<LPVOID> {
 
       let dll = DLL_NAMES.iter()
@@ -269,6 +271,7 @@ mod ext {
       None
     }
 
+    // Try to load from the current directory.
     fn in_current_dir() -> Option<LPVOID> {
       if let Ok(dir) = ::std::env::current_exe() {
         if let Some(dir) = dir.parent() {
@@ -278,8 +281,22 @@ mod ext {
       None
     }
 
+    // Try to load indirectly via `dlopen("dll.so")`.
     fn in_global() -> Option<LPVOID> {
       try_load_from(None)
+    }
+
+    // Try to find in $PATH.
+    fn in_paths() -> Option<LPVOID> {
+    	use std::env;
+    	if let Some(paths) = env::var_os("PATH") {
+    		for path in env::split_paths(&paths) {
+    			if let Some(dll) = try_load_from(Some(&path)) {
+    				return Some(dll);
+    			}
+    		}
+    	}
+    	None
     }
 
     // try specified path first (and only if present)
@@ -287,7 +304,7 @@ mod ext {
     let dll = if let Some(path) = unsafe { CUSTOM_DLL_PATH.as_ref() } {
       try_load(Path::new(path))
     } else {
-      in_current_dir().or(in_global())
+      in_current_dir().or(in_paths()).or(in_global())
     };
 
     if let Some(dll) = dll {
@@ -305,6 +322,7 @@ mod ext {
       let get_api: FuncType = unsafe { std::mem::transmute(sym) };
       return Ok(get_api());
     }
+
     let sdkbin = if cfg!(target_os = "macos") { "bin.osx" } else { "bin.gtk" };
     let msg = format!("Please verify that Sciter SDK is installed and its binaries (from {}) are available in PATH.", sdkbin);
     Err(format!("error: '{}' was not found neither in PATH nor near the current executable.\n  {}", DLL_NAMES[0], msg))
@@ -349,7 +367,12 @@ pub fn SciterAPI<'a>() -> &'a ISciterAPI {
 
 lazy_static! {
 	static ref _API: &'static ISciterAPI = { SciterAPI() };
-	static ref _GAPI: &'static SciterGraphicsAPI = { unsafe { &*(SciterAPI().GetSciterGraphicsAPI)() } };
+	static ref _GAPI: &'static SciterGraphicsAPI = {
+		if version_num() < 0x04010A00 {
+			panic!("Graphics API is incompatible since 4.1.10 (your version is {})", version());
+		}
+		unsafe { &*(SciterAPI().GetSciterGraphicsAPI)() }
+	};
 	static ref _RAPI: &'static SciterRequestAPI = { unsafe { &*(SciterAPI().GetSciterRequestAPI)() } };
 }
 
@@ -384,17 +407,24 @@ pub fn set_library(custom_path: &str) -> ::std::result::Result<(), String> {
 
 
 /// Sciter engine version number (e.g. `0x03030200`).
+///
+/// Note: does not return the `build` part because it isn't fit in `0..255` byte range.
+/// Use [`sciter::version()`](fn.version.html) instead which returns complete version string.
 pub fn version_num() -> u32 {
-	let v1 = (_API.SciterVersion)(true);
-	let v2 = (_API.SciterVersion)(false);
-	let num = ((v1 >> 16) << 24) | ((v1 & 0xFFFF) << 16) | ((v2 >> 16) << 8) | (v2 & 0xFFFF);
+	use types::BOOL;
+	let v1 = (_API.SciterVersion)(true as BOOL);
+	let v2 = (_API.SciterVersion)(false as BOOL);
+	let (major, minor, revision, _build) = (v1 >> 16 & 0xFF, v1 & 0xFF, v2 >> 16 & 0xFF, v2 & 0xFF);
+	let num = (major << 24) | (minor << 16) | (revision << 8);
+	// let num = ((v1 >> 16) << 24) | ((v1 & 0xFFFF) << 16) | ((v2 >> 16) << 8) | (v2 & 0xFFFF);
 	return num;
 }
 
 /// Sciter engine version string (e.g. "`3.3.2.0`").
 pub fn version() -> String {
-	let v1 = (_API.SciterVersion)(true);
-	let v2 = (_API.SciterVersion)(false);
+	use types::BOOL;
+	let v1 = (_API.SciterVersion)(true as BOOL);
+	let v2 = (_API.SciterVersion)(false as BOOL);
 	let num = [v1 >> 16, v1 & 0xFFFF, v2 >> 16, v2 & 0xFFFF];
 	let version = format!("{}.{}.{}.{}", num[0], num[1], num[2], num[3]);
 	return version;
@@ -419,6 +449,9 @@ pub enum RuntimeOptions<'a> {
   /// global or per-window; enables Sciter Inspector for all windows, must be called before loading HTML.
   DebugMode(bool),
   /// global or per-window; value: combination of [`SCRIPT_RUNTIME_FEATURES`](enum.SCRIPT_RUNTIME_FEATURES.html) flags.
+  ///
+  /// Note that these features have been disabled by default
+  /// since [4.2.5.0](https://rawgit.com/c-smile/sciter-sdk/7036a9c7912ac30d9f369d9abb87b278d2d54c6d/logfile.htm).
   ScriptFeatures(u8),
 	/// global; value: milliseconds, connection timeout of http client.
 	ConnectionTimeout(u32),
@@ -426,6 +459,8 @@ pub enum RuntimeOptions<'a> {
 	OnHttpsError(u8),
 	/// global; value: json with GPU black list, see the `gpu-blacklist.json` resource.
 	GpuBlacklist(&'a str),
+	/// global; value: script source to be loaded into each view before any other script execution.
+	InitScript(&'a str),
 }
 
 /// Set various sciter engine global options, see the [`RuntimeOptions`](enum.RuntimeOptions.html).
@@ -436,6 +471,7 @@ pub fn set_options(options: RuntimeOptions) -> std::result::Result<(), ()> {
 		ConnectionTimeout(ms) => (SCITER_CONNECTION_TIMEOUT, ms as usize),
 		OnHttpsError(behavior) => (SCITER_HTTPS_ERROR, behavior as usize),
 		GpuBlacklist(json) => (SCITER_SET_GPU_BLACKLIST, json.as_bytes().as_ptr() as usize),
+		InitScript(script) => (SCITER_SET_INIT_SCRIPT, script.as_bytes().as_ptr() as usize),
 		ScriptFeatures(mask) => (SCITER_SET_SCRIPT_RUNTIME_FEATURES, mask as usize),
 		GfxLayer(backend) => (SCITER_SET_GFX_LAYER, backend as usize),
 		DebugMode(enable) => (SCITER_SET_DEBUG_MODE, enable as usize),

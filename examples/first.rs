@@ -4,7 +4,7 @@ extern crate sciter;
 
 fn main() {
   // can be called as `examples/first ~/lib/libsciter.so`
-  if cfg!(feature = "shared") {
+  if cfg!(feature = "dynamic") {
     if let Some(arg) = std::env::args().nth(1) {
       if let Err(_) = sciter::set_options(sciter::RuntimeOptions::LibraryPath(&arg)) {
         panic!("Invalid library path specified.");
@@ -25,8 +25,9 @@ fn main() {
   let class_name = sciter::utf::w2s((scapi.SciterClassName)());
   println!("sciter class name: {}", class_name);
 
-  let v1 = (scapi.SciterVersion)(true);
-  let v2 = (scapi.SciterVersion)(false);
+  use sciter::types::BOOL;
+  let v1 = (scapi.SciterVersion)(true as BOOL);
+  let v2 = (scapi.SciterVersion)(false as BOOL);
   let num = [v1 >> 16, v1 & 0xFFFF, v2 >> 16, v2 & 0xFFFF];
   let version = num.iter().map(|&x| x.to_string()).collect::<Vec<String>>().join(".");
   println!("sciter version: {} {:?}", version, num);
